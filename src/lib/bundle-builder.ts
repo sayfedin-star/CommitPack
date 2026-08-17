@@ -1,10 +1,12 @@
 /**
  * @file src/lib/bundle-builder.ts
  * @description Generates AI-agent-ready Markdown packs, JSON export objects,
- * and CSV commit history tables according to exact specifications.
+ * and CSV commit history tables with support for Single Commit, Compare Range,
+ * and optional Context Files.
  */
 
 import { GitHubCommitDetail, GitHubCommitListItem, GitHubCommitFile } from '../types/github';
+import { ContextFileItem } from '../types/review';
 
 /**
  * Derives markdown code block syntax language identifier from a file path.
@@ -53,6 +55,9 @@ export function getLanguageForFile(filename: string): string {
     dockerfile: 'dockerfile',
     graphql: 'graphql',
     proto: 'protobuf',
+    astro: 'astro',
+    vue: 'vue',
+    svelte: 'svelte',
   };
 
   const basename = filename.split('/').pop()?.toLowerCase() || '';
@@ -118,28 +123,27 @@ export function buildIndentedTree(paths: string[]): string {
   return lines.join('\n');
 }
 
+export interface BundleScopeOptions {
+  reviewMode?: 'single' | 'compare';
+  baseSha?: string;
+  headSha?: string;
+  compareUrl?: string;
+  totalCommits?: number;
+  aheadBy?: number;
+  contextFiles?: ContextFileItem[];
+}
+
 /**
- * Generates the AI Agent Markdown bundle according to the exact specification:
- * ---
- * # Commit Pack
- * - Repo: owner/repo | Commit: {full sha} | Branch: {branch}
- * - Message: {full message} | Author: {name} <{email}> | Date: {ISO}
- * - URL: {html_url}
- * ## Changed Files Summary
- * | File | Status | +/− |
- * ## Directory Structure (changed files only)
- * {indented tree of changed file paths}
- * ## Files
- * ### File: path/to/file.ts (modified, +12/−3)
- * ```ts
- * {content}
- * ```
+ * Generates the AI Agent Markdown bundle according to the exact specification.
+ * Supports Single Commit and Compare Range modes, filtered file lists, and Context files.
  * 
  * @param repoFullName - 'owner/repo'
  * @param branch - Current branch name
- * @param commit - Full commit detail object
+ * @param commit - Full commit detail object (or mock/synthesized detail from compare)
  * @param mode - 'full' or 'patch-only'
  * @param includePreDeletion - Whether pre-deletion contents are included for removed files
+ * @param filesOverride - Optional explicitly filtered list of files
+ * @param scopeOptions - Optional Compare Range and Context File parameters
  * @returns Formatted Markdown bundle string
  */
 export function buildMarkdownBundle(
@@ -147,15 +151,21 @@ export function buildMarkdownBundle(
   branch: string,
   commit: GitHubCommitDetail,
   mode: 'full' | 'patch-only' = 'full',
-  includePreDeletion: boolean = false
+  includePreDeletion: boolean = false,
+  filesOverride?: GitHubCommitFile[],
+  scopeOptions?: BundleScopeOptions
 ): string {
-  const authorName = commit.commit.author?.name || 'Unknown Author';
-  const authorEmail = commit.commit.author?.email || 'unknown@noreply.github.com';
-  const isoDate = commit.commit.author?.date || new Date().toISOString();
-  const commitMessage = commit.commit.message || '(no commit message)';
-  const htmlUrl = commit.html_url || `https://github.com/${repoFullName}/commit/${commit.sha}`;
+  const isCompare = scopeOptions?.reviewMode === 'compare';
+  const authorName = commit.commit?.author?.name || 'Unknown Author';
+  const authorEmail = commit.commit?.author?.email || 'unknown@noreply.github.com';
+  const isoDate = commit.commit?.author?.date || new Date().toISOString();
+  const commitMessage = commit.commit?.message || '(no commit message)';
+  const htmlUrl =
+    (isCompare && scopeOptions?.compareUrl) ||
+    commit.html_url ||
+    `https://github.com/${repoFullName}/commit/${commit.sha}`;
 
-  const files = commit.files || [];
+  const files = filesOverride || commit.files || [];
   const filePaths = files.map((f) => f.filename);
 
   const sections: string[] = [];
@@ -163,8 +173,26 @@ export function buildMarkdownBundle(
   // Metadata Header
   sections.push('---');
   sections.push('# Commit Pack');
-  sections.push(`- Repo: ${repoFullName} | Commit: ${commit.sha} | Branch: ${branch}`);
-  sections.push(`- Message: ${commitMessage.replace(/\n/g, ' ')} | Author: ${authorName} <${authorEmail}> | Date: ${isoDate}`);
+  if (isCompare) {
+    sections.push(
+      `- Repo: ${repoFullName} | Mode: Compare Range | Branch: ${branch}`
+    );
+    sections.push(
+      `- Base: ${scopeOptions?.baseSha || 'N/A'} | Head: ${scopeOptions?.headSha || commit.sha}`
+    );
+    if (scopeOptions?.totalCommits !== undefined) {
+      sections.push(
+        `- Total Commits in Range: ${scopeOptions.totalCommits}${
+          scopeOptions.aheadBy !== undefined ? ` (Ahead by ${scopeOptions.aheadBy})` : ''
+        }`
+      );
+    }
+  } else {
+    sections.push(`- Repo: ${repoFullName} | Commit: ${commit.sha} | Branch: ${branch}`);
+    sections.push(
+      `- Message: ${commitMessage.replace(/\n/g, ' ')} | Author: ${authorName} <${authorEmail}> | Date: ${isoDate}`
+    );
+  }
   sections.push(`- URL: ${htmlUrl}`);
   sections.push('');
 
@@ -175,7 +203,9 @@ export function buildMarkdownBundle(
   files.forEach((file) => {
     const statusLabel = file.status.toUpperCase();
     const plusMinus = `+${file.additions}/-${file.deletions}`;
-    const filenameDisplay = file.previous_filename ? `${file.previous_filename} → ${file.filename}` : file.filename;
+    const filenameDisplay = file.previous_filename
+      ? `${file.previous_filename} → ${file.filename}`
+      : file.filename;
     sections.push(`| \`${filenameDisplay}\` | ${statusLabel} | ${plusMinus} |`);
   });
   sections.push('');
@@ -186,6 +216,26 @@ export function buildMarkdownBundle(
   sections.push(buildIndentedTree(filePaths));
   sections.push('```');
   sections.push('');
+
+  // Context Files Section (if provided)
+  const contextFiles = scopeOptions?.contextFiles || [];
+  if (contextFiles.length > 0) {
+    sections.push('## Context Files (unchanged)');
+    contextFiles.forEach((cf) => {
+      const lang = getLanguageForFile(cf.path);
+      sections.push(`### Context File: ${cf.path} (Context file — unchanged)`);
+      if (cf.content !== undefined) {
+        sections.push(`\`\`\`${lang}`);
+        sections.push(cf.content);
+        sections.push('```');
+      } else if (cf.error) {
+        sections.push(`> *Error loading context file: ${cf.error}*`);
+      } else {
+        sections.push('> *Context file content not loaded.*');
+      }
+      sections.push('');
+    });
+  }
 
   // Files Content / Patches
   sections.push('## Files');
@@ -209,12 +259,14 @@ export function buildMarkdownBundle(
       // Full content mode
       if (file.status === 'removed') {
         if (includePreDeletion && file.preDeletionContent) {
-          sections.push('> *File was deleted in this commit. Showing pre-deletion version:*');
+          sections.push(
+            `> *File was deleted in this ${isCompare ? 'range' : 'commit'}. Showing pre-deletion version:*`
+          );
           sections.push(`\`\`\`${lang}`);
           sections.push(file.preDeletionContent);
-          sections.push('\`\`\`');
+          sections.push('```');
         } else {
-          sections.push('> *File deleted in this commit (no post-commit content).*');
+          sections.push(`> *File deleted in this ${isCompare ? 'range' : 'commit'} (no post-commit content).*`);
         }
       } else if (file.binary) {
         sections.push('> *Binary file content omitted from text bundle. Included in ZIP archive download.*');
@@ -243,32 +295,51 @@ export function buildMarkdownBundle(
 }
 
 /**
- * Builds a structured JSON export object representing the commit and its files.
+ * Builds a structured JSON export object representing the commit/range and its files.
  * 
  * @param repoFullName - 'owner/repo'
  * @param branch - Current branch name
  * @param commit - Full commit detail object
+ * @param filesOverride - Optional filtered files list
+ * @param scopeOptions - Optional Compare Range and Context File parameters
  * @returns JSON-serializable structured object
  */
 export function buildJsonExport(
   repoFullName: string,
   branch: string,
-  commit: GitHubCommitDetail
+  commit: GitHubCommitDetail,
+  filesOverride?: GitHubCommitFile[],
+  scopeOptions?: BundleScopeOptions
 ): object {
+  const isCompare = scopeOptions?.reviewMode === 'compare';
+  const files = filesOverride || commit.files || [];
+
   return {
     repo: repoFullName,
-    commit: commit.sha,
     branch,
-    author: {
-      name: commit.commit.author?.name,
-      email: commit.commit.author?.email,
-      date: commit.commit.author?.date,
-      avatar_url: commit.author?.avatar_url,
-    },
-    message: commit.commit.message,
-    html_url: commit.html_url,
+    mode: isCompare ? 'compare' : 'single',
+    commit: isCompare ? undefined : commit.sha,
+    baseSha: isCompare ? scopeOptions?.baseSha : undefined,
+    headSha: isCompare ? scopeOptions?.headSha : commit.sha,
+    html_url: (isCompare && scopeOptions?.compareUrl) || commit.html_url,
+    author: isCompare
+      ? undefined
+      : {
+          name: commit.commit?.author?.name,
+          email: commit.commit?.author?.email,
+          date: commit.commit?.author?.date,
+          avatar_url: commit.author?.avatar_url,
+        },
+    message: isCompare ? undefined : commit.commit?.message,
     stats: commit.stats,
-    files: (commit.files || []).map((f) => ({
+    total_commits: scopeOptions?.totalCommits,
+    ahead_by: scopeOptions?.aheadBy,
+    context_files: (scopeOptions?.contextFiles || []).map((cf) => ({
+      path: cf.path,
+      content: cf.content ?? null,
+      error: cf.error ?? null,
+    })),
+    files: files.map((f) => ({
       path: f.filename,
       previous_path: f.previous_filename,
       status: f.status,

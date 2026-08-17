@@ -14,6 +14,7 @@ import {
   DebugLogEntry,
   GitHubCommitFile,
 } from '../types/github';
+import { GitHubCompareResult } from '../types/review';
 
 // Known binary file extensions that should not be parsed as text
 const BINARY_EXTENSIONS = new Set([
@@ -334,6 +335,89 @@ export async function getCommitDetail(
     token,
     signal,
   });
+}
+
+/**
+ * Fetches the latest HEAD commit for a specific branch.
+ * 
+ * @param owner - Repository owner
+ * @param repo - Repository name
+ * @param branch - Branch name
+ * @param token - Optional GitHub Personal Access Token
+ * @param signal - Optional AbortSignal
+ * @returns Latest commit list item or null
+ */
+export async function getHeadCommit(
+  owner: string,
+  repo: string,
+  branch: string,
+  token?: string | null,
+  signal?: AbortSignal
+): Promise<GitHubCommitListItem | null> {
+  const commits = await githubFetch<GitHubCommitListItem[]>(`/repos/${owner}/${repo}/commits`, {
+    token,
+    params: {
+      sha: branch,
+      per_page: 1,
+    },
+    signal,
+  });
+  return commits && commits.length > 0 ? commits[0] : null;
+}
+
+/**
+ * Compares two commits/refs via GitHub compare API.
+ * GET /repos/{owner}/{repo}/compare/{base}...{head}
+ * 
+ * @param owner - Repository owner
+ * @param repo - Repository name
+ * @param base - Base commit SHA or ref
+ * @param head - Head commit SHA or ref
+ * @param token - Optional GitHub Personal Access Token
+ * @param signal - Optional AbortSignal
+ * @returns Compare response with commits and changed files
+ */
+export async function compareCommits(
+  owner: string,
+  repo: string,
+  base: string,
+  head: string,
+  token?: string | null,
+  signal?: AbortSignal
+): Promise<GitHubCompareResult> {
+  const safeBase = encodeURIComponent(base.trim());
+  const safeHead = encodeURIComponent(head.trim());
+  return githubFetch<GitHubCompareResult>(`/repos/${owner}/${repo}/compare/${safeBase}...${safeHead}`, {
+    token,
+    signal,
+  });
+}
+
+/**
+ * Calculates number of commits between base and head.
+ * 
+ * @param owner - Repository owner
+ * @param repo - Repository name
+ * @param baseSha - Base commit SHA
+ * @param headSha - Head commit SHA
+ * @param token - Optional GitHub Personal Access Token
+ * @param signal - Optional AbortSignal
+ * @returns Total commits ahead count
+ */
+export async function getCommitCountBetween(
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+  token?: string | null,
+  signal?: AbortSignal
+): Promise<number> {
+  try {
+    const result = await compareCommits(owner, repo, baseSha, headSha, token, signal);
+    return result.ahead_by ?? (result.commits ? result.commits.length : 0);
+  } catch {
+    return 0;
+  }
 }
 
 /**

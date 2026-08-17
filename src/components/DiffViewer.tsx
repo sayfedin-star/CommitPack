@@ -1,30 +1,28 @@
 /**
  * @file src/components/DiffViewer.tsx
- * @description Changed files list with status badges (A/M/D/R) and high-fidelity
- * line-by-line colored diff viewer with line numbers and binary placeholders.
+ * @description Changed files list with status badges (A/M/D/R), filter integration,
+ * exclusion reasons display, and high-fidelity line-by-line colored diff viewer.
  */
 
 import React, { useState, useMemo } from 'react';
 import {
   FileCode,
-  FilePlus,
-  FileEdit,
-  FileMinus,
-  FileSymlink,
   Search,
   Copy,
   Check,
-  Code2,
-  FileText,
   AlertTriangle,
   ExternalLink,
-  ChevronDown,
-  ChevronRight,
+  Filter,
+  EyeOff,
 } from 'lucide-react';
 import { GitHubCommitFile, GitHubCommitDetail } from '../types/github';
+import { ExcludedFileInfo } from '../types/review';
 
 interface DiffViewerProps {
   commitDetail: GitHubCommitDetail;
+  files: GitHubCommitFile[]; // Active files (filtered or raw)
+  excludedFiles?: ExcludedFileInfo[];
+  showExcluded?: boolean;
   selectedFileIndex: number;
   onSelectFileIndex: (index: number) => void;
 }
@@ -97,35 +95,30 @@ function getStatusBadge(status: string) {
       return {
         label: 'A',
         bg: 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80',
-        dot: 'bg-emerald-400',
         title: 'Added',
       };
     case 'modified':
       return {
         label: 'M',
         bg: 'bg-amber-950/80 text-amber-300 border-amber-800/80',
-        dot: 'bg-amber-400',
         title: 'Modified',
       };
     case 'removed':
       return {
         label: 'D',
         bg: 'bg-rose-950/80 text-rose-300 border-rose-800/80',
-        dot: 'bg-rose-400',
         title: 'Deleted',
       };
     case 'renamed':
       return {
         label: 'R',
         bg: 'bg-blue-950/80 text-blue-300 border-blue-800/80',
-        dot: 'bg-blue-400',
         title: 'Renamed',
       };
     default:
       return {
         label: '•',
         bg: 'bg-zinc-800 text-zinc-300 border-zinc-700',
-        dot: 'bg-zinc-400',
         title: status,
       };
   }
@@ -136,6 +129,9 @@ function getStatusBadge(status: string) {
  */
 export const DiffViewer: React.FC<DiffViewerProps> = ({
   commitDetail,
+  files,
+  excludedFiles = [],
+  showExcluded = false,
   selectedFileIndex,
   onSelectFileIndex,
 }) => {
@@ -143,19 +139,33 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   const [viewMode, setViewMode] = useState<'diff' | 'content'>('diff');
   const [hasCopied, setHasCopied] = useState(false);
 
-  const files = commitDetail.files || [];
+  // Combine files with excluded if showExcluded is enabled
+  const combinedList = useMemo(() => {
+    if (!showExcluded || excludedFiles.length === 0) {
+      return files.map((f) => ({ file: f, isExcluded: false, reason: '' }));
+    }
+    const includedItems = files.map((f) => ({ file: f, isExcluded: false, reason: '' }));
+    const excludedItems = excludedFiles.map((ef) => ({
+      file: ef.file,
+      isExcluded: true,
+      reason: ef.details || ef.reason,
+    }));
+    return [...includedItems, ...excludedItems];
+  }, [files, excludedFiles, showExcluded]);
 
-  const filteredFiles = useMemo(() => {
-    if (!searchQuery.trim()) return files;
+  const filteredItems = useMemo(() => {
+    if (!searchQuery.trim()) return combinedList;
     const query = searchQuery.toLowerCase();
-    return files.filter(
-      (f) =>
-        f.filename.toLowerCase().includes(query) ||
-        (f.previous_filename && f.previous_filename.toLowerCase().includes(query))
+    return combinedList.filter(
+      (item) =>
+        item.file.filename.toLowerCase().includes(query) ||
+        (item.file.previous_filename && item.file.previous_filename.toLowerCase().includes(query))
     );
-  }, [files, searchQuery]);
+  }, [combinedList, searchQuery]);
 
-  const activeFile: GitHubCommitFile | undefined = files[selectedFileIndex] || files[0];
+  const safeIndex = Math.min(Math.max(0, selectedFileIndex), Math.max(0, filteredItems.length - 1));
+  const activeItem = filteredItems[safeIndex] || filteredItems[0];
+  const activeFile = activeItem?.file;
 
   const parsedDiff = useMemo(() => {
     return activeFile?.patch ? parsePatch(activeFile.patch) : [];
@@ -163,10 +173,11 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
 
   const handleCopy = () => {
     if (!activeFile) return;
-    const textToCopy = viewMode === 'content' && activeFile.content
-      ? activeFile.content
-      : activeFile.patch || activeFile.content || '';
-    
+    const textToCopy =
+      viewMode === 'content' && activeFile.content
+        ? activeFile.content
+        : activeFile.patch || activeFile.content || '';
+
     if (textToCopy) {
       navigator.clipboard.writeText(textToCopy);
       setHasCopied(true);
@@ -174,12 +185,12 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
     }
   };
 
-  if (files.length === 0) {
+  if (combinedList.length === 0) {
     return (
       <div className="h-full flex items-center justify-center p-8 text-center text-zinc-500 text-xs">
         <div>
           <FileCode className="w-8 h-8 mx-auto mb-2 opacity-40" />
-          <p>No file changes recorded for this commit.</p>
+          <p>No changed files match current filters.</p>
         </div>
       </div>
     );
@@ -194,7 +205,8 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
           <div className="flex items-center justify-between text-xs">
             <span className="font-semibold text-zinc-300">Changed Files</span>
             <span className="font-mono text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded text-[11px]">
-              {files.length} {files.length === 1 ? 'file' : 'files'}
+              {files.length} included
+              {excludedFiles.length > 0 && ` (${excludedFiles.length} excl)`}
             </span>
           </div>
 
@@ -205,7 +217,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Filter changed files..."
+              placeholder="Filter files..."
               className="w-full pl-8 pr-3 py-1.5 bg-zinc-900 border border-zinc-700/80 rounded-md text-xs font-mono text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
@@ -213,20 +225,22 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
 
         {/* Scrollable File List */}
         <div className="flex-1 overflow-y-auto divide-y divide-zinc-800/40">
-          {filteredFiles.map((file) => {
-            const actualIndex = files.indexOf(file);
-            const isSelected = actualIndex === selectedFileIndex;
+          {filteredItems.map((item, idx) => {
+            const file = item.file;
+            const isSelected = idx === safeIndex;
             const badge = getStatusBadge(file.status);
 
             return (
               <button
-                key={file.filename}
-                id={`diff-file-${actualIndex}`}
+                key={`${file.filename}-${idx}`}
+                id={`diff-file-${idx}`}
                 type="button"
-                onClick={() => onSelectFileIndex(actualIndex)}
+                onClick={() => onSelectFileIndex(idx)}
                 className={`w-full text-left p-2.5 transition-colors flex items-start gap-2.5 text-xs ${
                   isSelected
                     ? 'bg-indigo-950/50 text-indigo-200 border-l-2 border-indigo-500 pl-2'
+                    : item.isExcluded
+                    ? 'opacity-60 hover:opacity-100 hover:bg-zinc-800/40 text-zinc-400 border-l-2 border-transparent'
                     : 'hover:bg-zinc-800/60 text-zinc-300 border-l-2 border-transparent'
                 }`}
               >
@@ -240,8 +254,13 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
 
                 {/* File Path & Diff Stat */}
                 <div className="flex-1 min-w-0">
-                  <div className="font-mono text-[11px] truncate leading-tight">
-                    {file.filename}
+                  <div className="font-mono text-[11px] truncate leading-tight flex items-center gap-1.5">
+                    <span>{file.filename}</span>
+                    {item.isExcluded && (
+                      <span className="text-[9px] font-sans px-1 rounded bg-amber-950 text-amber-300 border border-amber-900 shrink-0">
+                        Excluded
+                      </span>
+                    )}
                   </div>
                   {file.previous_filename && (
                     <div className="text-[10px] text-zinc-500 truncate font-mono">
@@ -266,6 +285,18 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950">
         {activeFile ? (
           <>
+            {/* Exclusion Notice Banner if active file is excluded */}
+            {activeItem?.isExcluded && (
+              <div className="px-3 py-2 bg-amber-950/40 border-b border-amber-800/60 text-xs text-amber-300 flex items-center justify-between font-mono">
+                <div className="flex items-center gap-2">
+                  <EyeOff className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    <strong>Excluded file:</strong> {activeItem.reason || 'Filtered out by active rules'} (will not be included in exported bundles).
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* File Diff Header Toolbar */}
             <div className="p-3 border-b border-zinc-800/80 bg-zinc-900/60 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">

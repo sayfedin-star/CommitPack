@@ -1,21 +1,26 @@
 /**
  * @file src/lib/zip-builder.ts
- * @description Generates client-side ZIP archives containing changed files
- * preserving folder structures and metadata documentation using JSZip with DEFLATE compression.
+ * @description Generates client-side ZIP archives containing changed files,
+ * context files, and metadata documentation using JSZip with DEFLATE compression.
+ * Supports Single Commit and Compare Range modes.
  */
 
 import JSZip from 'jszip';
-import { GitHubCommitDetail } from '../types/github';
+import { GitHubCommitDetail, GitHubCommitFile } from '../types/github';
+import { ContextFileItem } from '../types/review';
+import { BundleScopeOptions } from './bundle-builder';
 
 /**
  * Builds and triggers browser download of a ZIP archive containing all changed files
- * from the selected commit along with a root COMMIT_INFO.md summary file.
+ * from the selected commit or compare range along with a root COMMIT_INFO.md summary file.
  * 
  * @param repoName - Repository short name (e.g. 'react')
  * @param repoFullName - Full repository name (e.g. 'facebook/react')
  * @param branch - Branch name
- * @param commit - Full commit detail object with extracted file contents
+ * @param commit - Commit detail object with extracted file contents
  * @param includePreDeletion - Whether to include pre-deletion files in zip
+ * @param filesOverride - Optional explicitly filtered list of files
+ * @param scopeOptions - Optional Compare Range and Context File parameters
  * @returns Promise that resolves when download is triggered
  */
 export async function downloadCommitZip(
@@ -23,41 +28,78 @@ export async function downloadCommitZip(
   repoFullName: string,
   branch: string,
   commit: GitHubCommitDetail,
-  includePreDeletion: boolean = false
+  includePreDeletion: boolean = false,
+  filesOverride?: GitHubCommitFile[],
+  scopeOptions?: BundleScopeOptions
 ): Promise<void> {
   const zip = new JSZip();
+  const isCompare = scopeOptions?.reviewMode === 'compare';
   const shortSha = commit.sha.substring(0, 7);
+  const baseSha = scopeOptions?.baseSha;
+  const shortBase = baseSha ? baseSha.substring(0, 7) : 'base';
+  const headSha = scopeOptions?.headSha || commit.sha;
+  const shortHead = headSha.substring(0, 7);
 
-  // 1. Generate COMMIT_INFO.md metadata file at zip root
-  const commitInfoContent = [
-    `# Commit Information`,
+  const files = filesOverride || commit.files || [];
+  const contextFiles = scopeOptions?.contextFiles || [];
+
+  // 1. Generate COMMIT_INFO.md or COMPARE_INFO.md metadata file at zip root
+  const infoFilename = isCompare ? 'COMPARE_INFO.md' : 'COMMIT_INFO.md';
+  const metadataLines = isCompare
+    ? [
+        `# Compare Range Information`,
+        ``,
+        `- **Repository**: ${repoFullName}`,
+        `- **Branch**: ${branch}`,
+        `- **Review Mode**: Compare Range`,
+        `- **Base Commit**: ${baseSha || 'N/A'}`,
+        `- **Head Commit**: ${headSha}`,
+        `- **Compare URL**: ${scopeOptions?.compareUrl || commit.html_url}`,
+        `- **Total Commits**: ${scopeOptions?.totalCommits ?? 'N/A'}${
+          scopeOptions?.aheadBy !== undefined ? ` (Ahead by ${scopeOptions.aheadBy})` : ''
+        }`,
+        `- **Changed Files Included**: ${files.length}`,
+      ]
+    : [
+        `# Commit Information`,
+        ``,
+        `- **Repository**: ${repoFullName}`,
+        `- **Commit SHA**: ${commit.sha}`,
+        `- **Branch**: ${branch}`,
+        `- **Author**: ${commit.commit?.author?.name} <${commit.commit?.author?.email}>`,
+        `- **Date**: ${commit.commit?.author?.date}`,
+        `- **Commit URL**: ${commit.html_url}`,
+        `- **Stats**: +${commit.stats?.additions || 0} additions, -${commit.stats?.deletions || 0} deletions (${files.length} files)`,
+        ``,
+        `## Commit Message`,
+        `\`\`\``,
+        commit.commit?.message || '(no message)',
+        `\`\`\``,
+      ];
+
+  const infoContent = [
+    ...metadataLines,
     ``,
-    `- **Repository**: ${repoFullName}`,
-    `- **Commit SHA**: ${commit.sha}`,
-    `- **Branch**: ${branch}`,
-    `- **Author**: ${commit.commit.author?.name} <${commit.commit.author?.email}>`,
-    `- **Date**: ${commit.commit.author?.date}`,
-    `- **Commit URL**: ${commit.html_url}`,
-    `- **Stats**: +${commit.stats?.additions || 0} additions, -${commit.stats?.deletions || 0} deletions (${commit.files?.length || 0} files)`,
-    ``,
-    `## Commit Message`,
-    `\`\`\``,
-    commit.commit.message || '(no message)',
-    `\`\`\``,
-    ``,
-    `## Included Files`,
-    ...(commit.files || []).map(
+    `## Included Changed Files`,
+    ...files.map(
       (f) => `- [${f.status.toUpperCase()}] \`${f.filename}\` (+${f.additions}/-${f.deletions})`
     ),
+    ...(contextFiles.length > 0
+      ? [
+          ``,
+          `## Context Files (unchanged)`,
+          ...contextFiles.map((cf) => `- \`${cf.path}\` (stored in \`_context_files/\`)`),
+        ]
+      : []),
     ``,
     `---`,
     `Generated by CommitPack (GitHub Commit Inspector & AI Packager)`,
   ].join('\n');
 
-  zip.file('COMMIT_INFO.md', commitInfoContent);
+  zip.file(infoFilename, infoContent);
 
   // 2. Add each changed file preserving original directory structure
-  (commit.files || []).forEach((file) => {
+  files.forEach((file) => {
     if (file.status === 'removed') {
       if (includePreDeletion && file.preDeletionContent) {
         // Add pre-deletion version in a dedicated directory
@@ -74,7 +116,14 @@ export async function downloadCommitZip(
     }
   });
 
-  // 3. Generate ZIP with DEFLATE level 9 compression
+  // 3. Add Context Files if present
+  contextFiles.forEach((cf) => {
+    if (cf.content !== undefined) {
+      zip.file(`_context_files/${cf.path}`, cf.content);
+    }
+  });
+
+  // 4. Generate ZIP with DEFLATE level 9 compression
   const blob = await zip.generateAsync({
     type: 'blob',
     compression: 'DEFLATE',
@@ -83,9 +132,11 @@ export async function downloadCommitZip(
     },
   });
 
-  // 4. Trigger download
+  // 5. Trigger download with range or single-commit specific filename
   const cleanRepoName = repoName.replace(/[^a-zA-Z0-9_\-]/g, '_');
-  const filename = `${cleanRepoName}-${shortSha}-changed-files.zip`;
+  const filename = isCompare
+    ? `${cleanRepoName}-${shortBase}-to-${shortHead}-changed-files.zip`
+    : `${cleanRepoName}-${shortSha}-changed-files.zip`;
 
   const downloadUrl = URL.createObjectURL(blob);
   const anchor = document.createElement('a');

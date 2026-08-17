@@ -15,6 +15,7 @@ import {
   Sparkles,
   ExternalLink,
   RefreshCw,
+  Bookmark,
 } from 'lucide-react';
 import { RateLimitState } from '../types/github';
 import { checkRateLimit } from '../lib/github-api';
@@ -26,6 +27,7 @@ interface HeaderProps {
   onSelectSampleRepo: (repoUrl: string) => void;
   isDebugOpen: boolean;
   onToggleDebug: () => void;
+  onOpenSessionsModal: () => void;
 }
 
 const SAMPLE_REPOS = [
@@ -45,6 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectSampleRepo,
   isDebugOpen,
   onToggleDebug,
+  onOpenSessionsModal,
 }) => {
   const [resetCountdown, setResetCountdown] = useState<string>('');
   const [isRefreshingRateLimit, setIsRefreshingRateLimit] = useState(false);
@@ -110,8 +113,16 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Mobile Debug / PAT trigger */}
+          {/* Mobile Debug / PAT / Sessions trigger */}
           <div className="flex items-center gap-2 md:hidden">
+            <button
+              id="mobile-sessions-button"
+              onClick={onOpenSessionsModal}
+              className="p-1.5 text-indigo-300 hover:text-indigo-100 bg-indigo-950/60 rounded border border-indigo-800/80 text-xs"
+              title="Review Sessions"
+            >
+              <Bookmark className="w-4 h-4" />
+            </button>
             <button
               id="mobile-pat-button"
               onClick={onOpenPatModal}
@@ -203,6 +214,17 @@ export const Header: React.FC<HeaderProps> = ({
               <RefreshCw className={`w-3 h-3 ${isRefreshingRateLimit ? 'animate-spin text-indigo-400' : ''}`} />
             </button>
           </div>
+
+          {/* Review Sessions Modal Trigger */}
+          <button
+            id="open-sessions-modal-btn"
+            onClick={onOpenSessionsModal}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border bg-indigo-950/40 hover:bg-indigo-900/60 text-indigo-300 border-indigo-800/60 transition-all shadow-sm"
+            title="Manage saved review sessions"
+          >
+            <Bookmark className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">Sessions</span>
+          </button>
 
           {/* GitHub PAT Modal Trigger */}
           <button

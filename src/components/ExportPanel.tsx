@@ -1,7 +1,8 @@
 /**
  * @file src/components/ExportPanel.tsx
- * @description Export Hub for AI Agent Markdown bundles, structured JSON dumps,
- * CSV commit lists, and DEFLATE-compressed ZIP downloads via JSZip.
+ * @description Export Hub for AI Agent Markdown bundles, Agent Review Prompts,
+ * structured JSON dumps, CSV commit lists, and DEFLATE-compressed ZIP downloads via JSZip.
+ * Fully supports Single Commit and Compare Range modes with active file filtering and context files.
  */
 
 import React, { useState, useMemo } from 'react';
@@ -17,16 +18,20 @@ import {
   Bot,
   FileText,
   CheckCircle2,
+  GitCompare,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   GitHubCommitDetail,
   GitHubCommitListItem,
+  GitHubCommitFile,
   ExtractionMode,
 } from '../types/github';
 import {
   buildMarkdownBundle,
   buildJsonExport,
   buildCommitListCsv,
+  BundleScopeOptions,
 } from '../lib/bundle-builder';
 import { downloadCommitZip } from '../lib/zip-builder';
 import {
@@ -34,6 +39,8 @@ import {
   formatTokenCount,
   checkTokenBudget,
 } from '../lib/token-counter';
+import { AgentReviewPanel } from './AgentReviewPanel';
+import { ContextFileItem } from '../types/review';
 
 interface ExportPanelProps {
   repoName: string;
@@ -43,6 +50,14 @@ interface ExportPanelProps {
   commitList: GitHubCommitListItem[];
   mode: ExtractionMode;
   includePreDeletion: boolean;
+  filesOverride?: GitHubCommitFile[];
+  scopeOptions?: BundleScopeOptions;
+  // Enhancement 2: Review Task & Prompt
+  taskText: string;
+  onChangeTaskText: (text: string) => void;
+  onMarkReviewed?: () => void;
+  lastReviewedSha?: string | null;
+  excludedCount?: number;
 }
 
 /**
@@ -56,18 +71,38 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
   commitList,
   mode,
   includePreDeletion,
+  filesOverride,
+  scopeOptions,
+  taskText,
+  onChangeTaskText,
+  onMarkReviewed,
+  lastReviewedSha,
+  excludedCount = 0,
 }) => {
-  const [activeTab, setActiveTab] = useState<'markdown' | 'json' | 'zip' | 'csv'>('markdown');
+  const [activeTab, setActiveTab] = useState<'review_prompt' | 'markdown' | 'json' | 'zip' | 'csv'>('review_prompt');
   const [hasCopiedMarkdown, setHasCopiedMarkdown] = useState<boolean>(false);
   const [isZipping, setIsZipping] = useState<boolean>(false);
   const [zipSuccess, setZipSuccess] = useState<boolean>(false);
 
+  const isCompare = scopeOptions?.reviewMode === 'compare';
   const shortSha = commitDetail.sha.substring(0, 7);
+  const baseSha = scopeOptions?.baseSha;
+  const shortBase = baseSha ? baseSha.substring(0, 7) : 'base';
+  const headSha = scopeOptions?.headSha || commitDetail.sha;
+  const shortHead = headSha.substring(0, 7);
 
-  // Generate Markdown Bundle
+  // Generate Markdown Bundle with scope options and filtered files
   const markdownContent = useMemo(() => {
-    return buildMarkdownBundle(repoFullName, branch, commitDetail, mode, includePreDeletion);
-  }, [repoFullName, branch, commitDetail, mode, includePreDeletion]);
+    return buildMarkdownBundle(
+      repoFullName,
+      branch,
+      commitDetail,
+      mode,
+      includePreDeletion,
+      filesOverride,
+      scopeOptions
+    );
+  }, [repoFullName, branch, commitDetail, mode, includePreDeletion, filesOverride, scopeOptions]);
 
   // Estimate Tokens
   const estimatedTokens = useMemo(() => {
@@ -80,8 +115,8 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
 
   // Generate JSON object
   const jsonContent = useMemo(() => {
-    return JSON.stringify(buildJsonExport(repoFullName, branch, commitDetail), null, 2);
-  }, [repoFullName, branch, commitDetail]);
+    return JSON.stringify(buildJsonExport(repoFullName, branch, commitDetail, filesOverride), null, 2);
+  }, [repoFullName, branch, commitDetail, filesOverride]);
 
   // Handle Markdown Copy
   const handleCopyMarkdown = () => {
@@ -96,7 +131,9 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `commitpack-${repoName}-${shortSha}.md`;
+    a.download = isCompare
+      ? `commitpack-${repoName}-${shortBase}-to-${shortHead}.md`
+      : `commitpack-${repoName}-${shortSha}.md`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -110,7 +147,9 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
     const a = document.createElement('a');
     const ownerName = repoFullName.split('/')[0] || 'github';
     a.href = url;
-    a.download = `${ownerName}-${repoName}-${shortSha}.json`;
+    a.download = isCompare
+      ? `${ownerName}-${repoName}-${shortBase}-to-${shortHead}.json`
+      : `${ownerName}-${repoName}-${shortSha}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -137,7 +176,15 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
     setIsZipping(true);
     setZipSuccess(false);
     try {
-      await downloadCommitZip(repoName, repoFullName, branch, commitDetail, includePreDeletion);
+      await downloadCommitZip(
+        repoName,
+        repoFullName,
+        branch,
+        commitDetail,
+        includePreDeletion,
+        filesOverride,
+        scopeOptions
+      );
       setZipSuccess(true);
       setTimeout(() => setZipSuccess(false), 3000);
     } catch (err) {
@@ -147,12 +194,29 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
     }
   };
 
+  const [ownerPart] = repoFullName.split('/');
+  const effectiveFiles = filesOverride || commitDetail.files || [];
+
   return (
     <div id="export-panel-container" className="h-full flex flex-col bg-zinc-950 overflow-hidden">
       {/* Top Export Tabs */}
       <div className="p-3 border-b border-zinc-800/80 bg-zinc-900/60 flex flex-wrap items-center justify-between gap-3">
         {/* Navigation Tabs */}
         <div className="flex items-center gap-1 bg-zinc-950 border border-zinc-800 rounded-lg p-1 text-xs">
+          <button
+            id="tab-review-prompt-btn"
+            type="button"
+            onClick={() => setActiveTab('review_prompt')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-colors ${
+              activeTab === 'review_prompt'
+                ? 'bg-indigo-600 text-white shadow-sm font-semibold'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Bot className="w-3.5 h-3.5 text-indigo-300" />
+            <span>Agent Review Prompt</span>
+          </button>
+
           <button
             id="tab-markdown-btn"
             type="button"
@@ -163,8 +227,8 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            <Bot className="w-3.5 h-3.5" />
-            <span>AI Agent Pack (MD)</span>
+            <FileText className="w-3.5 h-3.5" />
+            <span>AI Pack (MD)</span>
           </button>
 
           <button
@@ -210,7 +274,7 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
           </button>
         </div>
 
-        {/* Action Controls for Current Tab */}
+        {/* Action Controls for Active Tab */}
         <div className="flex items-center gap-2">
           {activeTab === 'markdown' && (
             <>
@@ -245,30 +309,31 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
                 ) : (
                   <>
                     <Copy className="w-3.5 h-3.5" />
-                    <span>Copy for AI</span>
+                    <span>Copy Pack</span>
                   </>
                 )}
               </button>
 
-              {/* Download MD Button */}
+              {/* Download Markdown Button */}
               <button
-                id="download-md-btn"
+                id="download-markdown-bundle-btn"
                 type="button"
                 onClick={handleDownloadMarkdown}
-                className="p-1.5 text-zinc-400 hover:text-zinc-200 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-md transition-colors"
-                title="Download .md file"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-mono border border-zinc-700 transition-colors"
+                title="Download as .md file"
               >
-                <Download className="w-4 h-4" />
+                <Download className="w-3.5 h-3.5" />
+                <span>.md</span>
               </button>
             </>
           )}
 
           {activeTab === 'json' && (
             <button
-              id="download-json-btn"
+              id="download-json-export-btn"
               type="button"
               onClick={handleDownloadJson}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-mono border border-zinc-700 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Download JSON</span>
@@ -277,127 +342,169 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
 
           {activeTab === 'csv' && (
             <button
-              id="download-csv-btn"
+              id="download-csv-export-btn"
               type="button"
               onClick={handleDownloadCsv}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-mono border border-zinc-700 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Download CSV ({commitList.length} rows)</span>
+              <span>Download CSV</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Token Over-Budget Warning Banner */}
-      {activeTab === 'markdown' && tokenBudget.isOverBudget && (
-        <div
-          id="token-warning-banner"
-          className="px-4 py-2 bg-amber-950/40 border-b border-amber-800/60 text-xs text-amber-300 flex items-center gap-2"
-        >
-          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-          <span>{tokenBudget.warning}</span>
-        </div>
-      )}
+      {/* Main Tab Content Display */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* TAB 1: Agent Review Task & Prompt */}
+        {activeTab === 'review_prompt' && (
+          <AgentReviewPanel
+            owner={ownerPart || 'repo'}
+            repo={repoName}
+            branch={branch}
+            mode={isCompare ? 'compare' : 'single'}
+            baseSha={baseSha}
+            headSha={headSha}
+            githubUrl={scopeOptions?.compareUrl || commitDetail.html_url}
+            includedFileCount={effectiveFiles.length}
+            excludedFileCount={excludedCount}
+            taskText={taskText}
+            onChangeTaskText={onChangeTaskText}
+            commitPackMarkdown={markdownContent}
+            onMarkReviewed={onMarkReviewed}
+            lastReviewedSha={lastReviewedSha}
+          />
+        )}
 
-      {/* Main Tab Content View */}
-      <div className="flex-1 overflow-auto p-4 select-text">
+        {/* TAB 2: AI Agent Markdown Bundle Preview */}
         {activeTab === 'markdown' && (
-          <div className="space-y-2">
-            <pre className="p-4 bg-zinc-900/60 border border-zinc-800 rounded-xl font-mono text-xs text-zinc-200 overflow-x-auto leading-relaxed whitespace-pre-wrap">
-              <code>{markdownContent}</code>
-            </pre>
+          <div className="space-y-3">
+            {/* Token Budget Warning Banner */}
+            {tokenBudget.isOverBudget && (
+              <div
+                id="token-budget-warning-banner"
+                className="p-3 bg-amber-950/40 border border-amber-800/80 rounded-xl text-xs text-amber-300 flex items-start gap-2.5 font-mono"
+              >
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">Token Warning:</span> This bundle contains ~
+                  {estimatedTokens.toLocaleString()} tokens, exceeding the suggested{' '}
+                  {tokenBudget.modelSuggestion} budget. Consider switching to Patch-Only mode or using File Filters to reduce token volume.
+                </div>
+              </div>
+            )}
+
+            <div className="relative">
+              <pre
+                id="markdown-preview-output"
+                className="p-4 bg-zinc-900/60 border border-zinc-800 rounded-xl text-xs font-mono text-zinc-200 overflow-x-auto whitespace-pre-wrap leading-relaxed select-text max-h-[600px]"
+              >
+                <code>{markdownContent}</code>
+              </pre>
+            </div>
           </div>
         )}
 
+        {/* TAB 3: JSON Object Export */}
         {activeTab === 'json' && (
-          <div className="space-y-2">
-            <pre className="p-4 bg-zinc-900/60 border border-zinc-800 rounded-xl font-mono text-xs text-emerald-300 overflow-x-auto leading-relaxed">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-xs font-mono text-zinc-400">
+              <span>Structured JSON representation of commit metadata and modified files</span>
+              <span>{effectiveFiles.length} files included</span>
+            </div>
+            <pre
+              id="json-preview-output"
+              className="p-4 bg-zinc-900/60 border border-zinc-800 rounded-xl text-xs font-mono text-zinc-200 overflow-x-auto whitespace-pre-wrap leading-relaxed select-text max-h-[600px]"
+            >
               <code>{jsonContent}</code>
             </pre>
           </div>
         )}
 
+        {/* TAB 4: ZIP Archive Download Hub */}
         {activeTab === 'zip' && (
-          <div className="max-w-xl mx-auto py-8 space-y-6 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-indigo-950 border border-indigo-800/80 flex items-center justify-center text-indigo-400 mx-auto shadow-xl shadow-indigo-950/50">
+          <div id="zip-export-container" className="max-w-xl mx-auto py-8 space-y-6 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center mx-auto shadow-inner">
               <Archive className="w-8 h-8" />
             </div>
 
             <div className="space-y-2">
               <h3 className="text-base font-bold text-zinc-100">
-                Download Changed Files as ZIP Archive
+                Download ZIP Archive of Changed Files
               </h3>
               <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
-                Creates a DEFLATE-compressed ZIP archive containing all{' '}
-                <strong className="text-zinc-200">{commitDetail.files?.length || 0}</strong>{' '}
-                changed files preserving original repository directory hierarchies, plus a{' '}
-                <code className="text-indigo-300 font-mono">COMMIT_INFO.md</code> documentation file at the root.
+                Creates a clean directory archive with all modified files preserving their repository paths,
+                plus a <code className="text-zinc-200 font-mono">COMMIT_INFO.md</code> summary file at root.
               </p>
             </div>
 
-            <div className="flex flex-col items-center gap-3">
+            {/* ZIP Info summary */}
+            <div className="p-4 bg-zinc-900/60 border border-zinc-800 rounded-xl text-xs font-mono text-zinc-300 max-w-md mx-auto text-left space-y-2">
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Archive format:</span>
+                <span>DEFLATE Level 9 (.zip)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Mode:</span>
+                <span className="text-indigo-300 capitalize">{isCompare ? 'Compare Range' : 'Single Commit'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Included files:</span>
+                <span>{effectiveFiles.length} files</span>
+              </div>
+              {scopeOptions?.contextFiles && scopeOptions.contextFiles.length > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Context files:</span>
+                  <span>{scopeOptions.contextFiles.length} files (in _context_files/)</span>
+                </div>
+              )}
+            </div>
+
+            {/* ZIP Action Button */}
+            <div>
               <button
-                id="download-zip-action-btn"
+                id="generate-and-download-zip-btn"
                 type="button"
                 onClick={handleDownloadZip}
                 disabled={isZipping}
-                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50"
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-semibold text-sm shadow-lg shadow-indigo-600/30 flex items-center gap-2 mx-auto transition-all active:scale-95"
               >
                 {isZipping ? (
                   <>
-                    <Archive className="w-4 h-4 animate-bounce" />
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     <span>Compressing Files...</span>
                   </>
                 ) : zipSuccess ? (
                   <>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-                    <span>Archive Downloaded!</span>
+                    <CheckCircle2 className="w-5 h-5 text-emerald-300" />
+                    <span>Downloaded!</span>
                   </>
                 ) : (
                   <>
-                    <Download className="w-4 h-4" />
-                    <span>Download {repoName}-{shortSha}-changed-files.zip</span>
+                    <Download className="w-5 h-5" />
+                    <span>
+                      Download {isCompare ? `${shortBase}-to-${shortHead}` : shortSha}.zip
+                    </span>
                   </>
                 )}
               </button>
-
-              <span className="text-[11px] text-zinc-500 font-mono">
-                Compressed locally in your browser using JSZip DEFLATE Level 9
-              </span>
             </div>
           </div>
         )}
 
+        {/* TAB 5: CSV Commits Export */}
         {activeTab === 'csv' && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between text-xs text-zinc-400">
-              <span>Commit history table ({commitList.length} commits loaded)</span>
+            <div className="flex items-center justify-between text-xs font-mono text-zinc-400">
+              <span>CSV dump of all loaded timeline commits ({commitList.length} total)</span>
+              <span>Spreadsheet ready</span>
             </div>
-            <div className="border border-zinc-800 rounded-xl overflow-hidden">
-              <table className="w-full text-left text-xs font-mono">
-                <thead className="bg-zinc-900 border-b border-zinc-800 text-zinc-400 text-[11px]">
-                  <tr>
-                    <th className="p-2.5">SHA</th>
-                    <th className="p-2.5">Date</th>
-                    <th className="p-2.5">Author</th>
-                    <th className="p-2.5">Message</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800/60 bg-zinc-950">
-                  {commitList.map((c) => (
-                    <tr key={c.sha} className="hover:bg-zinc-900/40 text-zinc-300">
-                      <td className="p-2.5 text-indigo-400 font-bold">{c.sha.substring(0, 7)}</td>
-                      <td className="p-2.5 text-zinc-400 whitespace-nowrap">
-                        {c.commit.author?.date?.substring(0, 10)}
-                      </td>
-                      <td className="p-2.5 text-zinc-200">{c.commit.author?.name}</td>
-                      <td className="p-2.5 text-zinc-300 truncate max-w-xs">{c.commit.message?.split('\n')[0]}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <pre
+              id="csv-preview-output"
+              className="p-4 bg-zinc-900/60 border border-zinc-800 rounded-xl text-xs font-mono text-zinc-200 overflow-x-auto whitespace-pre-wrap leading-relaxed select-text max-h-[600px]"
+            >
+              <code>{buildCommitListCsv(commitList)}</code>
+            </pre>
           </div>
         )}
       </div>
