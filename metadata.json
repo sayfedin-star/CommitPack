@@ -1,0 +1,6 @@
+{
+  "name": "CommitPack",
+  "description": "GitHub commit inspector that extracts files changed in any commit and packages them into AI-agent-ready Markdown/JSON bundles and ZIP archives.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
