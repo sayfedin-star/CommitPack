@@ -23,19 +23,27 @@ import {
   Eye,
   Sparkles,
   ExternalLink,
+  GitCommit,
+  FolderTree,
 } from 'lucide-react';
 import {
   GitHubTreeItem,
   GitHubCommitDetail,
   GitHubCommitFile,
 } from '../types/github';
+import { RepoTreeMode } from '../types/repo-context';
 import { getRepoTree, getFileContent } from '../lib/github-api';
+import { getPersistedRepoContext, savePersistedRepoContext } from '../lib/session-storage';
+import { MainRepoContext } from './MainRepoContext';
 
 interface FileExplorerProps {
   owner: string;
   repo: string;
+  defaultBranch?: string;
   commitDetail: GitHubCommitDetail;
   pat: string | null;
+  treeMode?: RepoTreeMode;
+  onModeChange?: (mode: RepoTreeMode) => void;
 }
 
 interface TreeNode {
@@ -112,9 +120,31 @@ function buildTreeStructure(items: GitHubTreeItem[]): TreeNode {
 export const FileExplorer: React.FC<FileExplorerProps> = ({
   owner,
   repo,
+  defaultBranch = 'main',
   commitDetail,
   pat,
+  treeMode: treeModeProp,
+  onModeChange,
 }) => {
+  // Mode state: 'commit' | 'main-context'
+  const [localTreeMode, setLocalTreeMode] = useState<RepoTreeMode>(() => {
+    return getPersistedRepoContext(owner, repo).activeMode || 'commit';
+  });
+
+  const treeMode = treeModeProp !== undefined ? treeModeProp : localTreeMode;
+
+  const handleModeChange = (mode: RepoTreeMode) => {
+    setLocalTreeMode(mode);
+    const persisted = getPersistedRepoContext(owner, repo);
+    savePersistedRepoContext(owner, repo, {
+      ...persisted,
+      activeMode: mode,
+    });
+    if (onModeChange) {
+      onModeChange(mode);
+    }
+  };
+
   const [treeItems, setTreeItems] = useState<GitHubTreeItem[]>([]);
   const [isLoadingTree, setIsLoadingTree] = useState<boolean>(false);
   const [treeError, setTreeError] = useState<string | null>(null);
@@ -307,125 +337,188 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
   };
 
   return (
-    <div id="file-explorer-container" className="h-full flex flex-col md:flex-row bg-zinc-950 overflow-hidden">
-      {/* Left Tree Explorer */}
-      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-zinc-800/80 flex flex-col shrink-0 bg-zinc-900/30">
-        {/* Tree Search Header */}
-        <div className="p-3 border-b border-zinc-800/80 space-y-2 bg-zinc-950/50">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-zinc-300">Tree at {commitDetail.sha.substring(0, 7)}</span>
-            <span className="font-mono text-zinc-500 text-[11px]">
-              {treeItems.length} items
-            </span>
-          </div>
+    <div id="file-explorer-container" className="h-full flex flex-col bg-zinc-950 min-h-0 w-full">
+      {/* Mode Switcher Segmented Control */}
+      <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-900/70 flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-1 bg-zinc-950 border border-zinc-800 rounded-lg p-1 text-xs font-mono">
+          <button
+            id="mode-commit-ref-btn"
+            type="button"
+            onClick={() => handleModeChange('commit')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md transition-colors ${
+              treeMode === 'commit'
+                ? 'bg-zinc-800 text-zinc-100 font-semibold shadow-inner'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <GitCommit className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Commit Ref ({commitDetail.sha.substring(0, 7)})</span>
+          </button>
 
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5" />
-            <input
-              id="tree-search-input"
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search repo tree..."
-              className="w-full pl-8 pr-3 py-1.5 bg-zinc-900 border border-zinc-700/80 rounded-md text-xs font-mono text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-          </div>
+          <button
+            id="mode-main-context-btn"
+            type="button"
+            onClick={() => handleModeChange('main-context')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md transition-colors ${
+              treeMode === 'main-context'
+                ? 'bg-indigo-600 text-white font-semibold shadow-sm'
+                : 'text-indigo-300 hover:text-indigo-200'
+            }`}
+          >
+            <FolderTree className="w-3.5 h-3.5" />
+            <span>Main Repository Context</span>
+          </button>
         </div>
 
-        {/* Tree Item List */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-          {isLoadingTree ? (
-            <div className="p-4 space-y-2 animate-pulse">
-              <div className="h-3 bg-zinc-800 rounded w-1/2" />
-              <div className="h-3 bg-zinc-800 rounded w-3/4" />
-              <div className="h-3 bg-zinc-800 rounded w-2/3" />
-            </div>
-          ) : treeError ? (
-            <div className="p-4 text-xs text-rose-400">{treeError}</div>
-          ) : (
-            Array.from<TreeNode>(treeRoot.children.values())
-              .sort((a: TreeNode, b: TreeNode) => {
-                const aIsDir = a.type === 'tree' || a.children.size > 0;
-                const bIsDir = b.type === 'tree' || b.children.size > 0;
-                if (aIsDir && !bIsDir) return -1;
-                if (!aIsDir && bIsDir) return 1;
-                return a.name.localeCompare(b.name);
-              })
-              .map((child: TreeNode) => renderNode(child, 0))
-          )}
+        <div className="flex items-center gap-3 text-[11px] font-mono text-zinc-400">
+          <span
+            id="active-mode-diagnostic-badge"
+            className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 font-bold"
+          >
+            Mode: {treeMode}
+          </span>
+          <div className="hidden sm:block">
+            {treeMode === 'commit' ? (
+              <span>Browsing snapshot at commit <code>{commitDetail.sha.substring(0, 7)}</code></span>
+            ) : (
+              <span>Repository-wide tree on branch <code>{defaultBranch || 'main'}</code></span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Right File Previewer */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950">
-        {previewPath ? (
-          <>
-            {/* Header */}
-            <div className="p-3 border-b border-zinc-800/80 bg-zinc-900/60 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                {getFileIcon(previewPath)}
-                <span className="font-mono text-xs font-semibold text-zinc-200 truncate">
-                  {previewPath}
+      {/* Mode Subviews */}
+      {treeMode === 'main-context' ? (
+        <div className="flex-1 flex flex-col min-h-[500px] w-full">
+          <MainRepoContext
+            owner={owner}
+            repo={repo}
+            defaultBranch={defaultBranch}
+            pat={pat}
+          />
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+          {/* Left Tree Explorer */}
+          <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-zinc-800/80 flex flex-col shrink-0 bg-zinc-900/30">
+            {/* Tree Search Header */}
+            <div className="p-3 border-b border-zinc-800/80 space-y-2 bg-zinc-950/50">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-zinc-300">Tree at {commitDetail.sha.substring(0, 7)}</span>
+                <span className="font-mono text-zinc-500 text-[11px]">
+                  {treeItems.length} items
                 </span>
-                {changedFileMap.has(previewPath) && (
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 bg-indigo-950 text-indigo-300 border border-indigo-800 rounded">
-                    Modified in commit
-                  </span>
-                )}
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  id="copy-tree-file-btn"
-                  type="button"
-                  onClick={handleCopyPreview}
-                  disabled={!previewContent}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-mono border border-zinc-700/80 transition-colors disabled:opacity-40"
-                >
-                  {hasCopied ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-emerald-300">Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5 text-zinc-400" />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5" />
+                <input
+                  id="tree-search-input"
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search repo tree..."
+                  className="w-full pl-8 pr-3 py-1.5 bg-zinc-900 border border-zinc-700/80 rounded-md text-xs font-mono text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
               </div>
             </div>
 
-            {/* Content view */}
-            <div className="flex-1 overflow-auto p-3 font-mono text-xs select-text">
-              {isLoadingPreview ? (
-                <div className="flex items-center justify-center h-48 text-zinc-500 gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
-                  <span>Loading content at {commitDetail.sha.substring(0, 7)}...</span>
+            {/* Tree Item List */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+              {isLoadingTree ? (
+                <div className="p-4 space-y-2 animate-pulse">
+                  <div className="h-3 bg-zinc-800 rounded w-1/2" />
+                  <div className="h-3 bg-zinc-800 rounded w-3/4" />
+                  <div className="h-3 bg-zinc-800 rounded w-2/3" />
                 </div>
-              ) : previewError ? (
-                <div className="p-4 bg-rose-950/30 border border-rose-800/50 rounded-lg text-rose-300 text-xs">
-                  {previewError}
-                </div>
-              ) : previewContent !== null ? (
-                <pre className="p-3 text-zinc-200 bg-zinc-900/40 rounded-lg overflow-x-auto leading-relaxed">
-                  <code>{previewContent}</code>
-                </pre>
+              ) : treeError ? (
+                <div className="p-4 text-xs text-rose-400">{treeError}</div>
               ) : (
-                <div className="text-zinc-500">No content</div>
+                Array.from<TreeNode>(treeRoot.children.values())
+                  .sort((a: TreeNode, b: TreeNode) => {
+                    const aIsDir = a.type === 'tree' || a.children.size > 0;
+                    const bIsDir = b.type === 'tree' || b.children.size > 0;
+                    if (aIsDir && !bIsDir) return -1;
+                    if (!aIsDir && bIsDir) return 1;
+                    return a.name.localeCompare(b.name);
+                  })
+                  .map((child: TreeNode) => renderNode(child, 0))
               )}
             </div>
-          </>
-        ) : (
-          <div className="h-full flex items-center justify-center p-8 text-center text-zinc-500 text-xs">
-            <div>
-              <Eye className="w-8 h-8 mx-auto mb-2 opacity-40" />
-              <p>Click any file from the repository tree to preview its content at this commit.</p>
-            </div>
           </div>
-        )}
-      </div>
+
+          {/* Right File Previewer */}
+          <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950">
+            {previewPath ? (
+              <>
+                {/* Header */}
+                <div className="p-3 border-b border-zinc-800/80 bg-zinc-900/60 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {getFileIcon(previewPath)}
+                    <span className="font-mono text-xs font-semibold text-zinc-200 truncate">
+                      {previewPath}
+                    </span>
+                    {changedFileMap.has(previewPath) && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 bg-indigo-950 text-indigo-300 border border-indigo-800 rounded">
+                        Modified in commit
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      id="copy-tree-file-btn"
+                      type="button"
+                      onClick={handleCopyPreview}
+                      disabled={!previewContent}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-mono border border-zinc-700/80 transition-colors disabled:opacity-40"
+                    >
+                      {hasCopied ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-300">Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 text-zinc-400" />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Content view */}
+                <div className="flex-1 overflow-auto p-3 font-mono text-xs select-text">
+                  {isLoadingPreview ? (
+                    <div className="flex items-center justify-center h-48 text-zinc-500 gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+                      <span>Loading content at {commitDetail.sha.substring(0, 7)}...</span>
+                    </div>
+                  ) : previewError ? (
+                    <div className="p-4 bg-rose-950/30 border border-rose-800/50 rounded-lg text-rose-300 text-xs">
+                      {previewError}
+                    </div>
+                  ) : previewContent !== null ? (
+                    <pre className="p-3 text-zinc-200 bg-zinc-900/40 rounded-lg overflow-x-auto leading-relaxed">
+                      <code>{previewContent}</code>
+                    </pre>
+                  ) : (
+                    <div className="text-zinc-500">No content</div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="h-full flex items-center justify-center p-8 text-center text-zinc-500 text-xs">
+                <div>
+                  <Eye className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                  <p>Click any file from the repository tree to preview its content at this commit.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

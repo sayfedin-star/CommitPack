@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,8 +8,40 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      // Initialize theme early to avoid flicker
+      (function() {
+        try {
+          var theme = localStorage.getItem('commitpack_theme') || localStorage.getItem('commitpack:v1:theme');
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.colorScheme = 'dark';
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.style.colorScheme = 'light';
+          }
+        } catch (_) {}
+      })();
+    </script>
+    <script>
+      // Safeguard against polyfills/scripts attempting to assign window.fetch when window.fetch is a getter-only property
+      (function() {
+        try {
+          var originalFetch = window.fetch ? window.fetch.bind(window) : undefined;
+          if (originalFetch) {
+            var activeFetch = originalFetch;
+            Object.defineProperty(window, 'fetch', {
+              get: function() { return activeFetch; },
+              set: function(newFetch) { activeFetch = newFetch; },
+              configurable: true,
+              enumerable: true
+            });
+          }
+        } catch (_) {}
+      })();
+    </script>
   </head>
-  <body class="bg-zinc-950 text-zinc-100 antialiased selection:bg-indigo-500 selection:text-white font-sans min-h-screen">
+  <body class="antialiased selection:bg-indigo-500 selection:text-white font-sans min-h-screen">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

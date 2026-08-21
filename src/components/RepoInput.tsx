@@ -1,32 +1,25 @@
 /**
  * @file src/components/RepoInput.tsx
- * @description Input bar for GitHub repository URL/shorthand parsing, branch selector,
- * pagination (10, 25, 50, 100 per page), direct SHA lookup, refresh with latest commit detector,
- * and top-level Single Commit vs Compare Range mode switch.
+ * @description Streamlined repository control bar with repo URL/shorthand parser,
+ * branch selector, refresh button, HEAD commit detector, and workspace helper subtitle.
  */
 
 import React, { useState } from 'react';
 import {
   Search,
   GitBranch,
-  Star,
-  GitFork,
-  Layers,
   ArrowRight,
-  AlertCircle,
-  ExternalLink,
-  Lock,
-  Globe,
-  Hash,
   RefreshCw,
   Clock,
-  GitCompare,
-  GitCommit,
   Sparkles,
   X,
+  FolderGit2,
+  GitCommit,
+  Boxes,
 } from 'lucide-react';
 import { GitHubRepoInfo, GitHubBranch, ParsedRepoUrl } from '../types/github';
 import { parseGitHubUrl } from '../lib/url-parser';
+import { AppWorkspace, WORKSPACES } from '../types/navigation';
 
 interface RepoInputProps {
   repoUrl: string;
@@ -37,26 +30,18 @@ interface RepoInputProps {
   branches: GitHubBranch[];
   selectedBranch: string;
   onSelectBranch: (branch: string) => void;
-  perPage: number;
-  onSelectPerPage: (n: number) => void;
-  directSha: string;
-  setDirectSha: (sha: string) => void;
-  onDirectShaSubmit: (sha: string) => void;
-  // Enhancement 1 & 3: Refresh, New Commit Detector & Mode Switch
-  reviewMode: 'single' | 'compare';
-  onSelectReviewMode: (mode: 'single' | 'compare') => void;
   isRefreshing: boolean;
   onRefreshRepo: () => void;
   lastCheckedRelative: string | null;
   newCommitCount: number;
   onLoadLatestCommits: () => void;
   onDismissNewCommits: () => void;
-  autoCheckEnabled: boolean;
-  onToggleAutoCheck: (enabled: boolean) => void;
+  activeWorkspace: AppWorkspace;
+  headSha?: string | null;
 }
 
 /**
- * Top control bar for repository search, branch configuration, mode selection, and latest commit detection.
+ * Clean repository input and status bar component.
  */
 export const RepoInput: React.FC<RepoInputProps> = ({
   repoUrl,
@@ -67,23 +52,18 @@ export const RepoInput: React.FC<RepoInputProps> = ({
   branches,
   selectedBranch,
   onSelectBranch,
-  perPage,
-  onSelectPerPage,
-  directSha,
-  setDirectSha,
-  onDirectShaSubmit,
-  reviewMode,
-  onSelectReviewMode,
   isRefreshing,
   onRefreshRepo,
   lastCheckedRelative,
   newCommitCount,
   onLoadLatestCommits,
   onDismissNewCommits,
-  autoCheckEnabled,
-  onToggleAutoCheck,
+  activeWorkspace,
+  headSha,
 }) => {
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  const currentWorkspaceInfo = WORKSPACES.find((w) => w.id === activeWorkspace) || WORKSPACES[0];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,296 +78,138 @@ export const RepoInput: React.FC<RepoInputProps> = ({
     onSubmitRepo(parsed);
   };
 
-  const handleShaSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (directSha.trim()) {
-      onDirectShaSubmit(directSha.trim());
-    }
-  };
+  const shortHead = headSha ? headSha.substring(0, 7) : '';
 
   return (
-    <section id="repo-input-section" className="bg-zinc-900/60 border-b border-zinc-800/80 px-4 py-3.5">
-      <div className="max-w-7xl mx-auto space-y-3">
-        {/* Row 1: Search Form + Inspect & Refresh */}
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
-          {/* URL / Shorthand Input Form */}
-          <form onSubmit={handleSubmit} className="flex-1 flex items-center gap-2">
-            <div className="relative flex-1">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500">
-                <Search className="w-4 h-4" />
-              </div>
-              <input
-                id="github-repo-url-input"
-                type="text"
-                value={repoUrl}
-                onChange={(e) => {
-                  setRepoUrl(e.target.value);
-                  if (validationError) setValidationError(null);
-                }}
-                placeholder="Paste GitHub URL or owner/repo (e.g. facebook/react or https://github.com/owner/repo)"
-                className="w-full pl-9 pr-4 py-2 bg-zinc-950 border border-zinc-700/80 rounded-lg text-xs md:text-sm font-mono text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 shadow-inner"
-              />
+    <section id="repo-input-section" className="bg-white/80 dark:bg-zinc-900/60 border-b border-slate-200 dark:border-zinc-800 px-3 sm:px-4 py-2.5 transition-colors">
+      <div className="max-w-7xl mx-auto space-y-2.5">
+        {/* Row 1: Workspace Title / Helper & Search Bar */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
+          {/* Workspace Title & Description */}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
+                {activeWorkspace === 'review-commit' && <GitCommit className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
+                {activeWorkspace === 'browse-repository' && <FolderGit2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
+                {activeWorkspace === 'build-context-pack' && <Boxes className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
+                <span>{currentWorkspaceInfo.title}</span>
+              </h1>
+              {headSha && (
+                <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700">
+                  {selectedBranch} @ {shortHead}
+                </span>
+              )}
             </div>
+            <p className="text-xs text-slate-500 dark:text-zinc-400 truncate max-w-2xl mt-0.5">
+              {currentWorkspaceInfo.description}
+            </p>
+          </div>
 
-            <button
-              id="inspect-repo-submit-btn"
-              type="submit"
-              disabled={isLoading || !repoUrl.trim()}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs md:text-sm font-semibold flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 transition-all shrink-0"
-            >
-              <span>{isLoading ? 'Inspecting...' : 'Inspect'}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-
-            {/* Refresh Button */}
-            {repoInfo && (
-              <button
-                id="refresh-repo-btn"
-                type="button"
-                onClick={onRefreshRepo}
-                disabled={isRefreshing || isLoading}
-                className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-mono border border-zinc-700 flex items-center gap-1.5 transition-all shrink-0 disabled:opacity-50"
-                title="Check HEAD commit on GitHub for changes without reloading page"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-indigo-400' : 'text-zinc-400'}`} />
-                <span className="hidden sm:inline">Refresh</span>
-              </button>
-            )}
-          </form>
-
-          {/* Secondary Controls (Branch, Pagination, Direct SHA) */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Branch Selector */}
-            {branches.length > 0 && (
-              <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs">
-                <GitBranch className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                <select
-                  id="branch-selector"
-                  value={selectedBranch}
-                  onChange={(e) => onSelectBranch(e.target.value)}
-                  className="bg-transparent text-zinc-200 text-xs font-mono focus:outline-none cursor-pointer pr-1 max-w-[140px] truncate"
-                >
-                  {branches.map((b) => (
-                    <option key={b.name} value={b.name} className="bg-zinc-900 text-zinc-200">
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Commits Per Page Selector */}
-            <div className="flex items-center gap-1 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs">
-              <Layers className="w-3.5 h-3.5 text-zinc-500 ml-1" />
-              <span className="text-zinc-500 text-[11px]">Show:</span>
-              {[10, 25, 50, 100].map((count) => (
-                <button
-                  key={count}
-                  id={`per-page-${count}-btn`}
-                  type="button"
-                  onClick={() => onSelectPerPage(count)}
-                  className={`px-1.5 py-0.5 rounded text-[11px] font-mono transition-colors ${
-                    perPage === count
-                      ? 'bg-indigo-600 text-white font-semibold'
-                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
-                  }`}
-                >
-                  {count}
-                </button>
-              ))}
-            </div>
-
-            {/* Direct Commit SHA Quick Jump */}
-            {repoInfo && (
-              <form onSubmit={handleShaSubmit} className="flex items-center gap-1">
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none text-zinc-500">
-                    <Hash className="w-3 h-3" />
-                  </div>
-                  <input
-                    id="direct-sha-input"
-                    type="text"
-                    value={directSha}
-                    onChange={(e) => setDirectSha(e.target.value)}
-                    placeholder="Jump to SHA..."
-                    className="w-28 pl-6 pr-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
+          {/* Repo Input Search Form */}
+          <div className="flex items-center gap-2 shrink-0">
+            <form onSubmit={handleSubmit} className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-80">
+                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400 dark:text-zinc-500">
+                  <Search className="w-3.5 h-3.5" />
                 </div>
+                <input
+                  id="github-repo-url-input"
+                  type="text"
+                  value={repoUrl}
+                  onChange={(e) => {
+                    setRepoUrl(e.target.value);
+                    if (validationError) setValidationError(null);
+                  }}
+                  placeholder="e.g. facebook/react or owner/repo"
+                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-lg text-xs font-mono text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                />
+              </div>
+
+              <button
+                id="inspect-repo-submit-btn"
+                type="submit"
+                disabled={isLoading || !repoUrl || !repoUrl.trim()}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-xs disabled:opacity-50 transition-all shrink-0"
+              >
+                <span>{isLoading ? 'Loading...' : 'Inspect'}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Refresh Button */}
+              {repoInfo && (
                 <button
-                  id="direct-sha-submit-btn"
-                  type="submit"
-                  disabled={!directSha.trim()}
-                  className="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-mono rounded-lg border border-zinc-700 disabled:opacity-40"
-                  title="Load specific commit SHA"
+                  id="refresh-repo-btn"
+                  type="button"
+                  onClick={onRefreshRepo}
+                  disabled={isRefreshing || isLoading}
+                  className="p-1.5 sm:px-2.5 sm:py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 rounded-lg text-xs font-mono border border-slate-200 dark:border-zinc-700 flex items-center gap-1 transition-all shrink-0 disabled:opacity-50"
+                  title="Check HEAD commit on GitHub"
                 >
-                  Go
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-indigo-600 dark:text-indigo-400' : ''}`} />
+                  <span className="hidden sm:inline">Refresh</span>
                 </button>
-              </form>
+              )}
+            </form>
+
+            {/* Branch Selector */}
+            {repoInfo && branches.length > 0 && (
+              <div className="relative shrink-0">
+                <div className="flex items-center gap-1 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs font-mono text-slate-700 dark:text-zinc-300">
+                  <GitBranch className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500 shrink-0" />
+                  <select
+                    id="branch-select-dropdown"
+                    value={selectedBranch}
+                    onChange={(e) => onSelectBranch(e.target.value)}
+                    className="bg-transparent text-xs font-mono text-slate-900 dark:text-zinc-100 focus:outline-none cursor-pointer pr-1"
+                  >
+                    {branches.map((b) => (
+                      <option key={b.name} value={b.name} className="bg-white dark:bg-zinc-900 text-slate-900 dark:text-zinc-100">
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Row 2: Mode Switcher & Auto Check Toggle & Last Checked */}
-        {repoInfo && (
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-zinc-800/60 text-xs">
-            {/* Mode Switch Tabs (Single Commit vs Compare Range) */}
-            <div className="flex items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800">
-              <button
-                id="mode-single-commit-tab"
-                type="button"
-                onClick={() => onSelectReviewMode('single')}
-                className={`px-3 py-1 rounded-lg text-xs font-mono font-medium transition-all flex items-center gap-1.5 ${
-                  reviewMode === 'single'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <GitCommit className="w-3.5 h-3.5" />
-                <span>Single Commit</span>
-              </button>
-
-              <button
-                id="mode-compare-range-tab"
-                type="button"
-                onClick={() => onSelectReviewMode('compare')}
-                className={`px-3 py-1 rounded-lg text-xs font-mono font-medium transition-all flex items-center gap-1.5 ${
-                  reviewMode === 'compare'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <GitCompare className="w-3.5 h-3.5" />
-                <span>Compare Range</span>
-              </button>
-            </div>
-
-            {/* Refresh telemetry and auto-check toggle */}
-            <div className="flex items-center gap-4 text-[11px] font-mono text-zinc-400">
-              {lastCheckedRelative && (
-                <span className="flex items-center gap-1 text-zinc-500">
-                  <Clock className="w-3 h-3" />
-                  <span>Checked {lastCheckedRelative}</span>
-                </span>
-              )}
-
-              <label className="flex items-center gap-1.5 cursor-pointer hover:text-zinc-200 select-none">
-                <input
-                  id="auto-check-toggle"
-                  type="checkbox"
-                  checked={autoCheckEnabled}
-                  onChange={(e) => onToggleAutoCheck(e.target.checked)}
-                  className="rounded bg-zinc-800 border-zinc-700 text-indigo-600 focus:ring-0"
-                />
-                <span>Auto-check (60s)</span>
-              </label>
-            </div>
+        {/* Validation Error Banner */}
+        {validationError && (
+          <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-3 py-1.5 rounded-lg border border-rose-200 dark:border-rose-800/60">
+            {validationError}
           </div>
         )}
 
-        {/* New Commits Detector Banner (Prominent Badge) */}
+        {/* New Commits Detector Banner */}
         {newCommitCount > 0 && (
           <div
-            id="new-commits-detector-badge"
-            className="p-3 bg-gradient-to-r from-indigo-950/90 to-purple-950/90 border border-indigo-500/80 rounded-xl text-xs flex flex-wrap items-center justify-between gap-3 shadow-lg shadow-indigo-950/40 animate-in fade-in"
+            id="new-commit-alert-banner"
+            className="flex items-center justify-between gap-2 p-2 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/80 rounded-lg text-xs"
           >
-            <div className="flex items-center gap-2.5">
-              <span className="p-1 rounded-full bg-indigo-500 text-white animate-pulse">
-                <Sparkles className="w-3.5 h-3.5" />
-              </span>
-              <span className="text-zinc-100 font-semibold">
-                <strong>{newCommitCount}</strong> new {newCommitCount === 1 ? 'commit' : 'commits'} detected on branch{' '}
-                <span className="font-mono text-indigo-300">`{selectedBranch}`</span>
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 animate-pulse" />
+              <span className="text-slate-800 dark:text-zinc-200">
+                <strong>{newCommitCount} new commit{newCommitCount > 1 ? 's' : ''}</strong> available on{' '}
+                <code>{selectedBranch}</code>.
               </span>
             </div>
 
             <div className="flex items-center gap-2">
               <button
-                id="load-latest-commits-btn"
                 type="button"
                 onClick={onLoadLatestCommits}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-mono font-bold rounded-lg shadow-sm transition-all"
+                className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold shadow-xs transition-colors"
               >
-                Load latest
+                Load Latest
               </button>
-
               <button
-                id="dismiss-new-commits-btn"
                 type="button"
                 onClick={onDismissNewCommits}
-                className="p-1.5 text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-zinc-800/80 transition-colors"
-                title="Dismiss banner"
+                className="text-slate-400 hover:text-slate-600 dark:text-zinc-400 dark:hover:text-zinc-200 p-1"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
-            </div>
-          </div>
-        )}
-
-        {/* Validation Error Message */}
-        {validationError && (
-          <div
-            id="url-validation-error"
-            className="p-2.5 bg-rose-950/40 border border-rose-800/60 rounded-lg text-xs text-rose-300 flex items-center gap-2 animate-in fade-in"
-          >
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-            <span>{validationError}</span>
-          </div>
-        )}
-
-        {/* Loaded Repo Summary Meta Card */}
-        {repoInfo && (
-          <div
-            id="repo-meta-summary"
-            className="flex flex-wrap items-center justify-between gap-3 bg-zinc-950/80 border border-zinc-800/80 rounded-lg px-3.5 py-2 text-xs"
-          >
-            <div className="flex items-center gap-2.5">
-              <img
-                src={repoInfo.owner.avatar_url}
-                alt={repoInfo.owner.login}
-                className="w-5 h-5 rounded-full border border-zinc-700 object-cover"
-                referrerPolicy="no-referrer"
-              />
-              <div className="flex items-center gap-1.5">
-                <a
-                  href={repoInfo.html_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-bold text-zinc-100 hover:text-indigo-400 flex items-center gap-1"
-                >
-                  <span>{repoInfo.full_name}</span>
-                  <ExternalLink className="w-3 h-3 text-zinc-500" />
-                </a>
-                {repoInfo.private ? (
-                  <span className="flex items-center gap-0.5 text-[10px] text-amber-300 bg-amber-950/50 border border-amber-800/60 px-1.5 py-0.2 rounded font-mono">
-                    <Lock className="w-2.5 h-2.5" /> Private
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-0.5 text-[10px] text-zinc-400 bg-zinc-800/50 border border-zinc-700/50 px-1.5 py-0.2 rounded font-mono">
-                    <Globe className="w-2.5 h-2.5" /> Public
-                  </span>
-                )}
-              </div>
-              {repoInfo.description && (
-                <span className="text-zinc-400 text-xs hidden md:inline truncate max-w-md">
-                  — {repoInfo.description}
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-3 text-zinc-400 font-mono text-[11px]">
-              {repoInfo.language && (
-                <span className="text-indigo-300 bg-indigo-950/40 px-2 py-0.5 rounded border border-indigo-900/60">
-                  {repoInfo.language}
-                </span>
-              )}
-              <span className="flex items-center gap-1">
-                <Star className="w-3.5 h-3.5 text-amber-400" />
-                {repoInfo.stargazers_count.toLocaleString()}
-              </span>
-              <span className="flex items-center gap-1">
-                <GitFork className="w-3.5 h-3.5 text-zinc-400" />
-                {repoInfo.forks_count.toLocaleString()}
-              </span>
             </div>
           </div>
         )}

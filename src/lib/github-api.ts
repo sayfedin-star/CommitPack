@@ -385,8 +385,8 @@ export async function compareCommits(
   token?: string | null,
   signal?: AbortSignal
 ): Promise<GitHubCompareResult> {
-  const safeBase = encodeURIComponent(base.trim());
-  const safeHead = encodeURIComponent(head.trim());
+  const safeBase = encodeURIComponent((base || '').trim());
+  const safeHead = encodeURIComponent((head || '').trim());
   return githubFetch<GitHubCompareResult>(`/repos/${owner}/${repo}/compare/${safeBase}...${safeHead}`, {
     token,
     signal,

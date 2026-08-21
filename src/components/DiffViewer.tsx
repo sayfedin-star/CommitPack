@@ -94,31 +94,31 @@ function getStatusBadge(status: string) {
     case 'added':
       return {
         label: 'A',
-        bg: 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80',
+        bg: 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800/80',
         title: 'Added',
       };
     case 'modified':
       return {
         label: 'M',
-        bg: 'bg-amber-950/80 text-amber-300 border-amber-800/80',
+        bg: 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800/80',
         title: 'Modified',
       };
     case 'removed':
       return {
         label: 'D',
-        bg: 'bg-rose-950/80 text-rose-300 border-rose-800/80',
+        bg: 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800/80',
         title: 'Deleted',
       };
     case 'renamed':
       return {
         label: 'R',
-        bg: 'bg-blue-950/80 text-blue-300 border-blue-800/80',
+        bg: 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800/80',
         title: 'Renamed',
       };
     default:
       return {
         label: '•',
-        bg: 'bg-zinc-800 text-zinc-300 border-zinc-700',
+        bg: 'bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 border-slate-300 dark:border-zinc-700',
         title: status,
       };
   }
@@ -154,8 +154,9 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   }, [files, excludedFiles, showExcluded]);
 
   const filteredItems = useMemo(() => {
-    if (!searchQuery.trim()) return combinedList;
-    const query = searchQuery.toLowerCase();
+    const safeQ = (searchQuery || '').trim();
+    if (!safeQ) return combinedList;
+    const query = safeQ.toLowerCase();
     return combinedList.filter(
       (item) =>
         item.file.filename.toLowerCase().includes(query) ||
@@ -187,9 +188,9 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
 
   if (combinedList.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center p-8 text-center text-zinc-500 text-xs">
+      <div className="h-full flex items-center justify-center p-8 text-center text-slate-400 dark:text-zinc-500 text-xs">
         <div>
-          <FileCode className="w-8 h-8 mx-auto mb-2 opacity-40" />
+          <FileCode className="w-8 h-8 mx-auto mb-2 opacity-40 text-slate-400" />
           <p>No changed files match current filters.</p>
         </div>
       </div>
@@ -197,34 +198,34 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   }
 
   return (
-    <div id="diff-viewer-container" className="h-full flex flex-col md:flex-row bg-zinc-950 overflow-hidden">
+    <div id="diff-viewer-container" className="h-full flex flex-col md:flex-row bg-white dark:bg-zinc-950 overflow-hidden">
       {/* Left Sidebar: Changed Files List */}
-      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-zinc-800/80 flex flex-col shrink-0 bg-zinc-900/30">
+      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-slate-200 dark:border-zinc-800 flex flex-col shrink-0 bg-slate-50/70 dark:bg-zinc-900/30">
         {/* Search & File count header */}
-        <div className="p-3 border-b border-zinc-800/80 space-y-2 bg-zinc-950/50">
+        <div className="p-3 border-b border-slate-200 dark:border-zinc-800 space-y-2 bg-slate-50 dark:bg-zinc-950/50">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-zinc-300">Changed Files</span>
-            <span className="font-mono text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded text-[11px]">
+            <span className="font-semibold text-slate-800 dark:text-zinc-300">Changed Files</span>
+            <span className="font-mono text-slate-600 dark:text-zinc-400 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 px-2 py-0.5 rounded text-[11px]">
               {files.length} included
               {excludedFiles.length > 0 && ` (${excludedFiles.length} excl)`}
             </span>
           </div>
 
           <div className="relative">
-            <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5" />
+            <Search className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500 absolute left-2.5 top-2.5" />
             <input
               id="diff-file-search"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Filter files..."
-              className="w-full pl-8 pr-3 py-1.5 bg-zinc-900 border border-zinc-700/80 rounded-md text-xs font-mono text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-md text-xs font-mono text-slate-900 dark:text-zinc-200 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
         </div>
 
         {/* Scrollable File List */}
-        <div className="flex-1 overflow-y-auto divide-y divide-zinc-800/40">
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-200 dark:divide-zinc-800/40">
           {filteredItems.map((item, idx) => {
             const file = item.file;
             const isSelected = idx === safeIndex;
@@ -238,10 +239,10 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                 onClick={() => onSelectFileIndex(idx)}
                 className={`w-full text-left p-2.5 transition-colors flex items-start gap-2.5 text-xs ${
                   isSelected
-                    ? 'bg-indigo-950/50 text-indigo-200 border-l-2 border-indigo-500 pl-2'
+                    ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-900 dark:text-indigo-200 border-l-2 border-indigo-600 dark:border-indigo-500 pl-2'
                     : item.isExcluded
-                    ? 'opacity-60 hover:opacity-100 hover:bg-zinc-800/40 text-zinc-400 border-l-2 border-transparent'
-                    : 'hover:bg-zinc-800/60 text-zinc-300 border-l-2 border-transparent'
+                    ? 'opacity-60 hover:opacity-100 hover:bg-slate-100 dark:hover:bg-zinc-800/40 text-slate-500 dark:text-zinc-400 border-l-2 border-transparent'
+                    : 'hover:bg-slate-100 dark:hover:bg-zinc-800/60 text-slate-700 dark:text-zinc-300 border-l-2 border-transparent'
                 }`}
               >
                 {/* Status Badge */}
@@ -255,23 +256,23 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                 {/* File Path & Diff Stat */}
                 <div className="flex-1 min-w-0">
                   <div className="font-mono text-[11px] truncate leading-tight flex items-center gap-1.5">
-                    <span>{file.filename}</span>
+                    <span className="text-slate-900 dark:text-zinc-100">{file.filename}</span>
                     {item.isExcluded && (
-                      <span className="text-[9px] font-sans px-1 rounded bg-amber-950 text-amber-300 border border-amber-900 shrink-0">
+                      <span className="text-[9px] font-sans px-1 rounded bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-900 shrink-0">
                         Excluded
                       </span>
                     )}
                   </div>
                   {file.previous_filename && (
-                    <div className="text-[10px] text-zinc-500 truncate font-mono">
+                    <div className="text-[10px] text-slate-400 dark:text-zinc-500 truncate font-mono">
                       from {file.previous_filename}
                     </div>
                   )}
                   <div className="flex items-center gap-2 mt-1 text-[10px] font-mono">
-                    <span className="text-emerald-400">+{file.additions}</span>
-                    <span className="text-rose-400">−{file.deletions}</span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">+{file.additions}</span>
+                    <span className="text-rose-600 dark:text-rose-400 font-medium">−{file.deletions}</span>
                     {file.content !== undefined && (
-                      <span className="text-zinc-500 ml-auto">✓ loaded</span>
+                      <span className="text-slate-400 dark:text-zinc-500 ml-auto">✓ loaded</span>
                     )}
                   </div>
                 </div>
@@ -282,14 +283,14 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       </div>
 
       {/* Right Area: Unified Diff Viewer or Full Content */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950">
+      <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-zinc-950">
         {activeFile ? (
           <>
             {/* Exclusion Notice Banner if active file is excluded */}
             {activeItem?.isExcluded && (
-              <div className="px-3 py-2 bg-amber-950/40 border-b border-amber-800/60 text-xs text-amber-300 flex items-center justify-between font-mono">
+              <div className="px-3 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-300 flex items-center justify-between font-mono">
                 <div className="flex items-center gap-2">
-                  <EyeOff className="w-4 h-4 text-amber-400 shrink-0" />
+                  <EyeOff className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                   <span>
                     <strong>Excluded file:</strong> {activeItem.reason || 'Filtered out by active rules'} (will not be included in exported bundles).
                   </span>
@@ -298,10 +299,10 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
             )}
 
             {/* File Diff Header Toolbar */}
-            <div className="p-3 border-b border-zinc-800/80 bg-zinc-900/60 flex flex-wrap items-center justify-between gap-3">
+            <div className="p-3 border-b border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/60 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
-                <FileCode className="w-4 h-4 text-indigo-400 shrink-0" />
-                <span className="font-mono text-xs font-semibold text-zinc-200 truncate">
+                <FileCode className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <span className="font-mono text-xs font-semibold text-slate-900 dark:text-zinc-200 truncate">
                   {activeFile.filename}
                 </span>
                 <span
@@ -316,15 +317,15 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
               <div className="flex items-center gap-2">
                 {/* Toggle View Mode if content is available */}
                 {activeFile.content !== undefined && activeFile.patch && (
-                  <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded-md p-0.5 text-xs">
+                  <div className="flex items-center bg-slate-100 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-md p-0.5 text-xs">
                     <button
                       id="view-diff-toggle-btn"
                       type="button"
                       onClick={() => setViewMode('diff')}
                       className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
                         viewMode === 'diff'
-                          ? 'bg-zinc-800 text-zinc-100 font-semibold'
-                          : 'text-zinc-400 hover:text-zinc-200'
+                          ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 font-semibold shadow-xs'
+                          : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200'
                       }`}
                     >
                       Patch Diff
@@ -335,8 +336,8 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                       onClick={() => setViewMode('content')}
                       className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
                         viewMode === 'content'
-                          ? 'bg-zinc-800 text-zinc-100 font-semibold'
-                          : 'text-zinc-400 hover:text-zinc-200'
+                          ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 font-semibold shadow-xs'
+                          : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200'
                       }`}
                     >
                       Full File
@@ -349,17 +350,17 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                   id="copy-diff-btn"
                   type="button"
                   onClick={handleCopy}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-mono border border-zinc-700/80 transition-colors"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-white hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 text-xs font-mono border border-slate-200 dark:border-zinc-700 transition-colors"
                   title="Copy patch to clipboard"
                 >
                   {hasCopied ? (
                     <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-emerald-300">Copied</span>
+                      <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span className="text-emerald-700 dark:text-emerald-300">Copied</span>
                     </>
                   ) : (
                     <>
-                      <Copy className="w-3.5 h-3.5 text-zinc-400" />
+                      <Copy className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-400" />
                       <span>Copy {viewMode === 'content' ? 'File' : 'Patch'}</span>
                     </>
                   )}
@@ -371,7 +372,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                     href={activeFile.blob_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded transition-colors"
+                    className="p-1 text-slate-400 hover:text-slate-600 dark:text-zinc-400 dark:hover:text-zinc-200 bg-white hover:bg-slate-100 dark:bg-zinc-800 rounded border border-slate-200 dark:border-zinc-700 transition-colors"
                     title="View on GitHub"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -381,10 +382,10 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
             </div>
 
             {/* Diff Body Content */}
-            <div className="flex-1 overflow-auto font-mono text-xs p-2 select-text">
+            <div className="flex-1 overflow-auto font-mono text-xs p-2 select-text bg-white dark:bg-zinc-950">
               {viewMode === 'content' && activeFile.content !== undefined ? (
                 /* Full Content Viewer */
-                <pre className="p-3 text-zinc-200 bg-zinc-900/40 rounded-lg overflow-x-auto leading-relaxed">
+                <pre className="p-3 text-slate-900 dark:text-zinc-200 bg-slate-50 dark:bg-zinc-900/40 rounded-lg border border-slate-200 dark:border-zinc-800 overflow-x-auto leading-relaxed">
                   <code>{activeFile.content}</code>
                 </pre>
               ) : activeFile.patch ? (
@@ -396,15 +397,15 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                         return (
                           <tr
                             key={idx}
-                            className="bg-indigo-950/30 text-indigo-300 border-y border-indigo-900/40 select-none"
+                            className="bg-indigo-50/80 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-300 border-y border-indigo-200 dark:border-indigo-900/40 select-none"
                           >
-                            <td className="w-12 px-2 py-0.5 text-right text-indigo-400/60 font-mono text-[11px]">
+                            <td className="w-12 px-2 py-0.5 text-right text-indigo-400 dark:text-indigo-400/60 font-mono text-[11px]">
                               ...
                             </td>
-                            <td className="w-12 px-2 py-0.5 text-right text-indigo-400/60 font-mono text-[11px]">
+                            <td className="w-12 px-2 py-0.5 text-right text-indigo-400 dark:text-indigo-400/60 font-mono text-[11px]">
                               ...
                             </td>
-                            <td className="px-3 py-0.5 text-indigo-300 font-semibold font-mono text-[11px]">
+                            <td className="px-3 py-0.5 text-indigo-800 dark:text-indigo-300 font-semibold font-mono text-[11px]">
                               {line.content}
                             </td>
                           </tr>
@@ -417,25 +418,25 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                       return (
                         <tr
                           key={idx}
-                          className={`hover:bg-zinc-800/40 transition-colors ${
+                          className={`hover:bg-slate-100/70 dark:hover:bg-zinc-800/40 transition-colors ${
                             isAdd
-                              ? 'bg-emerald-950/25 text-emerald-200'
+                              ? 'bg-emerald-50/80 dark:bg-emerald-950/25 text-emerald-900 dark:text-emerald-200'
                               : isDel
-                              ? 'bg-rose-950/25 text-rose-200'
-                              : 'text-zinc-300'
+                              ? 'bg-rose-50/80 dark:bg-rose-950/25 text-rose-900 dark:text-rose-200'
+                              : 'text-slate-800 dark:text-zinc-300'
                           }`}
                         >
                           {/* Old line number */}
-                          <td className="w-12 px-2 py-0.5 text-right text-zinc-600 select-none font-mono text-[11px] border-r border-zinc-800/50">
+                          <td className="w-12 px-2 py-0.5 text-right text-slate-400 dark:text-zinc-600 select-none font-mono text-[11px] border-r border-slate-200 dark:border-zinc-800/50">
                             {line.oldLine || ''}
                           </td>
                           {/* New line number */}
-                          <td className="w-12 px-2 py-0.5 text-right text-zinc-600 select-none font-mono text-[11px] border-r border-zinc-800/50">
+                          <td className="w-12 px-2 py-0.5 text-right text-slate-400 dark:text-zinc-600 select-none font-mono text-[11px] border-r border-slate-200 dark:border-zinc-800/50">
                             {line.newLine || ''}
                           </td>
                           {/* Line content */}
                           <td className="px-3 py-0.5 font-mono whitespace-pre-wrap break-all leading-snug">
-                            <span className="select-none font-bold inline-block w-4 text-zinc-500">
+                            <span className="select-none font-bold inline-block w-4 text-slate-400 dark:text-zinc-500">
                               {isAdd ? '+' : isDel ? '−' : ' '}
                             </span>
                             <span>{line.content}</span>
@@ -447,15 +448,15 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                 </table>
               ) : (
                 /* No patch available (binary or too large) */
-                <div className="h-64 flex flex-col items-center justify-center text-center p-6 text-zinc-400 space-y-3">
-                  <div className="w-10 h-10 rounded-full bg-amber-950/60 border border-amber-800 flex items-center justify-center text-amber-400">
+                <div className="h-64 flex flex-col items-center justify-center text-center p-6 text-slate-500 dark:text-zinc-400 space-y-3">
+                  <div className="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 flex items-center justify-center text-amber-600 dark:text-amber-400">
                     <AlertTriangle className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="font-semibold text-zinc-200 text-sm">
+                    <h4 className="font-semibold text-slate-900 dark:text-zinc-200 text-sm">
                       Binary or Large File — No diff available
                     </h4>
-                    <p className="text-xs text-zinc-500 mt-1 max-w-sm">
+                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1 max-w-sm">
                       GitHub does not generate text diff patches for binary assets or files exceeding size thresholds.
                     </p>
                   </div>
@@ -464,7 +465,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                       href={activeFile.blob_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-mono flex items-center gap-1.5 border border-zinc-700"
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 text-xs font-mono flex items-center gap-1.5 border border-slate-200 dark:border-zinc-700"
                     >
                       <span>View File on GitHub</span>
                       <ExternalLink className="w-3 h-3" />
@@ -475,7 +476,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
             </div>
           </>
         ) : (
-          <div className="h-full flex items-center justify-center text-zinc-500 text-xs">
+          <div className="h-full flex items-center justify-center text-slate-400 dark:text-zinc-500 text-xs">
             Select a changed file on the left to inspect its diff
           </div>
         )}

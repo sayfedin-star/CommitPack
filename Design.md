@@ -1,137 +1,141 @@
-# CommitPack — Architecture & Enhancement Specification
+# CommitPack — Task-First Architecture & Design Specification
 
-CommitPack is a client-side React 18 + TypeScript + Vite Single Page Application (SPA) that inspects GitHub commits and compare ranges, applies deterministic file filtering and presets, generates structured AI agent review prompts, and packages changed files into Markdown/JSON bundles and ZIP archives.
+CommitPack is a lightweight, high-performance React 18 + TypeScript + Vite Single Page Application (SPA) designed to solve three distinct developer tasks without visual or conceptual clutter:
 
----
-
-## 1. Five Core Enhancements
-
-### Enhancement 1: Refresh + Latest Commit Detector
-- **Purpose**: Allows users to check for newly pushed commits on the selected branch without reloading the webpage or losing active review state.
-- **API Calls**:
-  - `GET /repos/{owner}/{repo}/commits/{branch}` (via `getHeadCommit`)
-  - `GET /repos/{owner}/{repo}/compare/{latestKnownSha}...{headSha}` (via `getCommitCountBetween`)
-- **Telemetry**: All network requests logged to the in-app debug console with timing and status.
-- **UI & UX**:
-  - **Refresh button** positioned next to Inspect in `RepoInput`.
-  - **Relative timestamp**: Displays "Checked just now", "Checked 2m ago", etc.
-  - **Prominent notification banner**: Appears when `newCommitCount > 0`, displaying *"{N} new commit(s) detected on branch `{branch}`"* with **Load latest** and **Dismiss** actions.
-  - **Opt-in Auto-check**: Periodic 60-second polling toggle with Page Visibility detection (`document.visibilityState === 'visible'`) to prevent background rate limit consumption.
+1. **Review Commit**: Review changes in a commit or compare range, inspect diffs, and build structured AI review bundles with acceptance criteria.
+2. **Browse Repository**: Explore repository source trees at branch HEAD, inspect code, and copy single files with one click.
+3. **Build Context Pack**: Select multiple source files from branch HEAD with real-time LLM token budget tracking (20% reservation safeguard) and generate AI coding agent packs.
 
 ---
 
-### Enhancement 2: Review Task Textarea + Copy Review Prompt
-- **Purpose**: Enables engineers to input task acceptance criteria and instantly export an AI-agent-ready review prompt formatted in Markdown.
-- **Storage Keys**:
-  - `commitpack:v1:task:{owner}/{repo}:{branch}`: Auto-saves task text drafts per repository and branch.
-- **Prompt Structure**:
-  1. Header with Repository, Branch, Mode (Single vs. Compare), Base SHA, Head SHA, and GitHub URL.
-  2. Scope metrics: Included changed files count, Excluded files count.
-  3. Acceptance Criteria / Review Task block.
-  4. Core Prompt instructions directing the AI agent to verify implementation against requirements, highlight bugs, check edge cases, and inspect exclusions.
-  5. Complete CommitPack bundle (metadata + patches/sources).
-- **UI & Controls**:
-  - Located in the **Agent Review Prompt** tab of the Export hub.
-  - Character counter, clear button, token estimate badge (~4 chars/token).
-  - Validation: Requires non-empty acceptance criteria before copying.
-  - Interactive **Preview Prompt** toggle.
-  - One-click **Copy Review Prompt** button with feedback states.
-  - **Mark Reviewed / Checkpoint**: Saves the current commit as verified.
+## 1. Information Architecture & Navigation
+
+### 1.1 Primary 3-Destination Navigation
+The top navigation bar exposes exactly three primary task destinations with high-contrast active states:
+
+| Task Destination | Primary Responsibility | Primary Action | Target Persona / Job to be Done |
+|---|---|---|---|
+| **1. Review Commit** | Review one commit / range & build an AI review bundle | `[Build Review Pack]` | Code reviewer wanting to inspect a diff and copy a structured prompt for Claude / Gemini / ChatGPT. |
+| **2. Browse Repository** | Explore source hierarchy at HEAD & copy code snippets | `[Copy file]` / Inline Row Copy | Developer wanting to quickly browse a repo on GitHub without cloning, previewing code and copying code fences. |
+| **3. Build Context Pack** | Bundle multiple repo files for LLM agents with budget meters | `[Copy Markdown]` / `[Copy JSON]` | AI engineer bundling whole modules or files to feed into an AI coding workspace with token budget limits. |
+
+### 1.2 Top Header & Actions
+- **Left**: CommitPack brand + 3 primary destination tabs (`Review Commit`, `Browse Repository`, `Build Context Pack`).
+- **Right**:
+  - **Rate Limit Pill**: Shows remaining/total quota (`5000/5000` or `60/60`), reset countdown, and refresh icon.
+  - **Sessions Modal Trigger**: Open saved review sessions.
+  - **PAT Modal Trigger**: Add or manage GitHub Personal Access Token.
+  - **Logs Drawer Trigger**: Open slide-over API debug console with error counter badge.
+  - **Theme Toggle**: Switch between Light (default) and Dark theme.
+
+### 1.3 Repository Input Bar
+- Universal search input accepting `owner/repo` or GitHub URLs.
+- `[Inspect]` button + `[Refresh]` HEAD commit button.
+- Branch dropdown selector.
+- Source indicator: `{selectedBranch} @ {shortSha}` displayed clearly on Browse and Context Pack views.
+- New commits detector alert banner when branch HEAD advances.
 
 ---
 
-### Enhancement 3: Compare Range + Since Last Review
-- **Purpose**: Supports inspecting all accumulated changes across two arbitrary commits or comparing from a saved review checkpoint up to current branch HEAD.
-- **API Calls**:
-  - `GET /repos/{owner}/{repo}/compare/{base}...{head}` (via `compareCommits`)
-- **Storage Keys**:
-  - `commitpack:v1:last-reviewed:{owner}/{repo}:{branch}`: Records the latest reviewed commit SHA checkpoint.
-- **UI & User Flow**:
-  - Top-level Mode Switcher: **Single Commit** vs. **Compare Range**.
-  - **Base & Head Commit Selectors**: Dropdown selection from loaded timeline or direct SHA/tag input.
-  - **Swap Button**: Inverts Base and Head commits.
-  - **Timeline Ordering Validation**: Warns if Base is newer than Head in the timeline.
-  - **Identical Commit Validation**: Disables comparison if Base === Head.
-  - **Since Last Review Button**: Automatically sets Base to last reviewed checkpoint and Head to branch HEAD, executing the comparison. If no checkpoint exists, shows a helpful setup prompt.
-  - Comparison summary card with commit count, ahead/behind telemetry, and GitHub Compare URL.
-  - Range ZIP archive download filename: `{repo}-{shortBase}-to-{shortHead}-changed-files.zip`.
+## 2. Screen Specifications & Progressive Disclosure
+
+### 2.1 Page 1: Review Commit
+**Layout**: Two-column responsive desktop layout.
+
+- **Left Column (Commit Timeline)**:
+  - Sticky search bar filtering by message, author, or SHA.
+  - Conventional commit badges (`feat`, `fix`, `docs`, `refactor`, `test`, `perf`, `chore`).
+  - SHA copy action and relative date timestamps.
+  - Pagination selector (`10`, `25`, `50`, `100` commits).
+- **Right Main Column**:
+  - **Commit Summary Card**: SHA badge, author avatar, date, +additions / −deletions, file count, and GitHub link.
+  - **Extraction & Prompt Builder Bar**:
+    - Mode selector: Compact dropdown (`Full content (Recommended)` vs `Patch only`).
+    - Primary Action: `[Build Review Pack]` (initiates extraction and switches to AI review prompt view).
+    - Review Task & Acceptance criteria textarea with quick presets (`General Review`, `Security`, `Tests`).
+  - **`[Advanced options]` (Progressive Disclosure)**:
+    - Hidden by default; expands smoothly on click.
+    - **Review Mode Selector**: Single Commit vs Compare Range (Base SHA vs Head SHA, Swap, Since Last Review).
+    - **File Filters & Presets**: Preset filters (All, Code Only, Astro, Next.js, Supabase), glob patterns, and status toggles.
+    - **Inspect Excluded Files in Diff**: Toggle to view excluded files in diff viewer.
+    - **Extra Export Formats**: Copy raw Markdown bundle, Download ZIP archive.
+  - **Results Area**:
+    - Tab 1: **Diff Viewer**: File list with status badges (A/M/D/R) and high-fidelity colored diff viewer.
+    - Tab 2: **AI Review Pack & Exports**: Structured prompt preview, estimated token count, `[Copy Review Prompt]`, and `[Mark as Reviewed]`.
+
+### 2.2 Page 2: Browse Repository
+**Layout**: Fast, distraction-free code browser.
+
+- **Left Column (Tree Pane)**:
+  - Source indicator: `{branch} @ {headSha}`.
+  - Search filter input with match counting.
+  - Directory tree with folder expand/collapse and language-specific file icons.
+  - File size and line counts.
+  - **Inline Fast Copy Action**: Copy icon on each row copies markdown code fence (`### File: path \n \`\`\`lang ... \`\`\``) immediately.
+- **Right Column (File Preview Pane)**:
+  - Header: Selected file path breadcrumb, line count, language badge, `[Copy file]` action, and `[View on GitHub]`.
+  - Content: Clean code display with line numbers and full scrolling.
+  - Empty state: Clean guidance when no file is selected.
+- **Exclusion of Clutter**: No commit timeline, no checkboxes, no context budget meters, no extraction dropdowns.
+
+### 2.3 Page 3: Build Context Pack
+**Layout**: Dedicated workspace for multi-file LLM context generation.
+
+- **Top Sticky Context Budget Meter**:
+  - Target Context Selector: `32K`, `64K`, `128K`, `200K`, `1M`, or `Custom`.
+  - **20% Model Reservation**: 80% usable file budget, 20% reserved for instructions and LLM output.
+  - Real-time color-coded progress bar:
+    - 0–49%: Emerald (`#10b981`)
+    - 50–69%: Amber (`#f59e0b`)
+    - 70–84%: Orange (`#f97316`) + Warning banner
+    - 85%+: Rose (`#ef4444`) + Safeguard confirmation modal before copying/downloading
+- **Left Column (Virtualized Tree Pane)**:
+  - Powered by `@tanstack/react-virtual` for fast rendering of 7,000+ files.
+  - Tri-state folder checkboxes (empty, partial, checked).
+  - Search bar with match auto-expansion.
+- **Right Column (Selected File Pack Panel)**:
+  - Count of selected files and estimated tokens.
+  - Removable chips/list items and `[Clear All]` action.
+  - **Primary Actions**:
+    - `[Preview Pack]`: Modal showing full Markdown/JSON preview.
+    - `[Copy Markdown]`: Structured AI-ready Markdown bundle with tree manifest and context budget metadata.
+    - `[Copy JSON]`: Structured JSON bundle.
+    - `[Download MD]` / `[Download JSON]`.
+- **Secondary / Advanced Menu**:
+  - Full tree manifest generator (`Flat Paths`, `Compact Tree`, `ASCII Tree`).
+  - Custom token target configuration.
 
 ---
 
-### Enhancement 4: File Filters + Presets
-- **Purpose**: Deterministically filters changed files to keep AI prompts concise, relevant, and within model token budgets.
-- **Storage Keys**:
-  - `commitpack:v1:filters:{owner}/{repo}`: Persists filter configurations per repository.
-- **Filter Capabilities**:
-  - **Presets**:
-    - *All changed files* (default)
-    - *Code only* (filters out markdown, docs, config, assets)
-    - *Astro + TS* (`src/**/*.astro`, `src/**/*.ts`, `src/**/*.tsx`)
-    - *Next.js + TS* (`app/**/*`, `pages/**/*`, `components/**/*`, `lib/**/*`, `.ts`, `.tsx`)
-    - *Supabase / SQL* (`supabase/**/*`, `**/*.sql`, `**/*.ts`)
-    - *Custom*
-  - **Include & Exclude Globs**: Comma-separated deterministic glob matching supporting `*`, `**`, `?`, and extension wildcards.
-  - **Extension matching**: Comma-separated list (e.g. `.ts, .tsx, .astro`).
-  - **Status toggles**: Individual toggles for *Added*, *Modified*, *Renamed*, *Deleted*.
-  - **Max File Size**: Filters out files exceeding specified threshold in KB.
-  - **Context Files (Unchanged)**: Option to fetch and include reference files (e.g., `package.json`, `tsconfig.json`) from branch HEAD into prompts and ZIP archives (in `_context_files/`).
-  - **Exclusion Transparency**: Tracks and displays exact reasons for exclusion (`status_unselected`, `glob_exclude`, `glob_include_miss`, `extension_mismatch`, `max_size_exceeded`, `code_only_miss`).
-  - **Diff Inspection of Excluded Files**: Toggle to inspect excluded files in DiffViewer with an exclusion notice banner.
+## 3. GitHub API Debug Console Drawer
+- **Non-Obtrusive Design**: Removed permanent 32px pinned bar. The drawer is now a slide-over/bottom modal triggered via `Logs` in the top header.
+- **Features**:
+  - Live log feed of all API calls with HTTP method, status codes, latency in ms, and remaining rate limit quota.
+  - Filters: `All` vs `Errors`.
+  - Request inspector displaying payload parameters, curl equivalent, and error diagnostics.
+  - Clear logs button.
+  - Consumes `0px` screen height when closed.
 
 ---
 
-### Enhancement 5: Review Sessions
-- **Purpose**: Local-only workspace persistence enabling engineers to track review status across repos, save drafts, reopen previous sessions, and export/import review histories.
-- **Storage Keys**:
-  - `commitpack:v1:sessions`: Stores array of `ReviewSession` objects.
-- **Session Object Schema**:
-  - `id`: Unique session ID.
-  - `repo`: Full repository name (`owner/repo`).
-  - `branch`: Branch name.
-  - `mode`: `'single' | 'compare'`.
-  - `baseSha` & `headSha`: Commit references.
-  - `commitOrCompareUrl`: GitHub reference URL.
-  - `taskText`: Acceptance criteria string.
-  - `status`: `'pending' | 'passed' | 'needs_fixes'`.
-  - `notes`: Optional engineer notes.
-  - `filtersSnapshot`: Snapshot of active filter configuration.
-  - `includedFileCount` & `excludedFileCount`: File count telemetry.
-  - `createdAt`, `updatedAt`, `reviewedAt`: Timestamps.
-- **Actions**:
-  - **Save Current Session**: Bookmarks active state.
-  - **Reopen Session**: Restores repository, branch, mode, SHAs, filters, and task draft.
-  - **Status Management**: Quick status toggle dropdowns (Pending, Passed, Needs Fixes). Marking "Passed" automatically updates the `last-reviewed` checkpoint.
-  - **JSON Export / Import**: Download all sessions to JSON or import from file with schema validation.
-
----
-
-## 2. Storage Key Hierarchy
+## 4. Storage Key Hierarchy
 
 | Key Pattern | Description |
 |---|---|
 | `commitpack_github_pat` | GitHub Personal Access Token |
 | `commitpack_last_repo` | Last inspected repository string |
 | `commitpack_per_page` | Commits per page preference (10/25/50/100) |
-| `commitpack:v1:last-reviewed:{owner}/{repo}:{branch}` | Latest reviewed commit SHA for repository branch |
+| `commitpack_active_workspace` | Current active workspace (`review-commit`, `browse-repository`, `build-context-pack`) |
+| `commitpack_theme` | Active theme (`light` or `dark`) |
+| `commitpack:v1:context-budget:{owner}/{repo}` | Context budget target configuration |
+| `commitpack:v1:last-reviewed:{owner}/{repo}:{branch}` | Latest reviewed commit SHA checkpoint |
 | `commitpack:v1:task:{owner}/{repo}:{branch}` | Draft acceptance criteria / review task text |
 | `commitpack:v1:filters:{owner}/{repo}` | Filter configuration and preset state |
-| `commitpack:v1:sessions` | Array of saved ReviewSession records |
 
 ---
 
-## 3. Architecture & Modularity
+## 5. Verification & Accessibility
 
-- **Client-Side SPA**: Zero server dependencies; 100% executable inside modern browsers.
-- **Component Breakdown**:
-  - `src/components/Header.tsx`: Navigation, PAT status, Rate limit monitor, Sessions trigger.
-  - `src/components/RepoInput.tsx`: Repository URL parser, branch picker, Mode switcher, Refresh trigger, New commit detector.
-  - `src/components/CompareRangeSelector.tsx`: Base/Head commit pickers, Swap, Since Last Review, and Range summary.
-  - `src/components/FileFiltersPanel.tsx`: Filter presets, include/exclude globs, status toggles, context files adder, exclusion breakdowns.
-  - `src/components/AgentReviewPanel.tsx`: Acceptance criteria textarea, prompt preview, token metrics, and Copy Review Prompt action.
-  - `src/components/ReviewSessionsModal.tsx`: Saved sessions manager, reopen, status editor, and JSON export/import.
-  - `src/components/Timeline.tsx`: Vertical commit stream.
-  - `src/components/DiffViewer.tsx`: File list with status badges and syntax-highlighted unified line diffs.
-  - `src/components/FileExplorer.tsx`: Interactive tree browser at commit ref.
-  - `src/components/ExtractPanel.tsx`: Full Content vs Patch-Only extraction controls and progress bar.
-  - `src/components/ExportPanel.tsx`: AI Agent Prompt & Markdown, JSON, ZIP (JSZip DEFLATE), and CSV downloads.
-  - `src/components/DebugConsole.tsx`: Real-time GitHub API request audit logger.
+- **Responsive**: Adapts from mobile (vertical stacked panes) to large desktop (multi-column virtualized panes).
+- **Keyboard Navigation**: Focus outlines and accessible labels across all tabs and interactive controls.
+- **Contrast**: Passes WCAG AA in both Light and Dark themes.

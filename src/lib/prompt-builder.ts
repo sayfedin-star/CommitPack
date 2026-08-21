@@ -26,21 +26,23 @@ export interface ReviewPromptParams {
  */
 export function buildReviewPrompt(params: ReviewPromptParams): string {
   const {
-    owner,
-    repo,
-    branch,
-    mode,
+    owner = '',
+    repo = '',
+    branch = '',
+    mode = 'single',
     baseSha,
-    headSha,
-    githubUrl,
-    includedFileCount,
-    excludedFileCount,
-    taskText,
-    commitPackMarkdown,
-  } = params;
+    headSha = '',
+    githubUrl = '',
+    includedFileCount = 0,
+    excludedFileCount = 0,
+    taskText = '',
+    commitPackMarkdown = '',
+  } = params || {};
 
   const reviewModeLabel = mode === 'compare' ? 'Compare Range' : 'Single Commit';
   const baseValue = mode === 'compare' && baseSha ? baseSha : 'N/A';
+  const safeTaskText = (taskText || '').trim();
+  const safeCommitPack = (commitPackMarkdown || '').trim();
   const excludedLine =
     excludedFileCount > 0
       ? `\n- Excluded files: ${excludedFileCount} (filtered by active rules)`
@@ -60,7 +62,7 @@ You are reviewing implementation progress for a GitHub change set.
 - Included files: ${includedFileCount}${excludedLine}
 
 ## Acceptance Criteria
-${taskText.trim()}
+${safeTaskText || '(No specific acceptance criteria provided)'}
 
 ## Review Instructions
 Review only the provided files and patches. Do not assume code exists outside
@@ -80,6 +82,6 @@ Return the response in concise Markdown.
 ---
 
 # Commit Pack
-${commitPackMarkdown.trim()}
+${safeCommitPack || '(No files or patches available)'}
 `;
 }

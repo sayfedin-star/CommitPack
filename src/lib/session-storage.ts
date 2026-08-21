@@ -5,6 +5,7 @@
  */
 
 import { ReviewSession, FileFilterConfig, PersistedRepoState } from '../types/review';
+import { PersistedRepoContextState } from '../types/repo-context';
 import { getDefaultFilterConfig } from './file-filter';
 
 const SESSIONS_STORAGE_KEY = 'commitpack:v1:review-sessions';
@@ -173,7 +174,9 @@ export function getLastReviewedSha(owner: string, repo: string, branch: string):
 export function saveLastReviewedSha(owner: string, repo: string, branch: string, sha: string): void {
   try {
     const key = `commitpack:v1:last-reviewed:${getRepoBranchKey(owner, repo, branch)}`;
-    localStorage.setItem(key, sha.trim());
+    if (sha) {
+      localStorage.setItem(key, (sha || '').trim());
+    }
   } catch {
     // Ignore storage issues
   }
@@ -220,6 +223,68 @@ export const getSavedFilterConfig = (owner: string, repo: string) => getSavedFil
 export const saveFilterConfig = (owner: string, repo: string, config: FileFilterConfig) => saveFilters(owner, repo, config);
 
 // -------------------------------------------------------------
+// THEME PREFERENCE (LIGHT AS DEFAULT)
+// -------------------------------------------------------------
+
+const THEME_STORAGE_KEY = 'commitpack:v1:theme';
+
+export function getThemePreference(): 'light' | 'dark' {
+  try {
+    const raw = localStorage.getItem(THEME_STORAGE_KEY);
+    if (raw === 'dark') return 'dark';
+    return 'light'; // Default to light theme for first-time users
+  } catch {
+    return 'light';
+  }
+}
+
+export function saveThemePreference(theme: 'light' | 'dark'): void {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // In-memory fallback if storage fails
+  }
+}
+
+// -------------------------------------------------------------
+// CONTEXT BUDGET TARGET PER REPOSITORY
+// -------------------------------------------------------------
+
+export interface ContextBudgetConfig {
+  targetTokens: number;
+  isCustom?: boolean;
+}
+
+export function getSavedContextBudget(owner: string, repo: string): ContextBudgetConfig {
+  try {
+    const key = `commitpack:v1:context-budget:${getRepoKey(owner, repo)}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+      return { targetTokens: 128000 };
+    }
+    const parsed = JSON.parse(raw);
+    const target = typeof parsed.targetTokens === 'number' && parsed.targetTokens > 0
+      ? parsed.targetTokens
+      : 128000;
+    return {
+      targetTokens: target,
+      isCustom: Boolean(parsed.isCustom),
+    };
+  } catch {
+    return { targetTokens: 128000 };
+  }
+}
+
+export function saveContextBudget(owner: string, repo: string, budget: ContextBudgetConfig): void {
+  try {
+    const key = `commitpack:v1:context-budget:${getRepoKey(owner, repo)}`;
+    localStorage.setItem(key, JSON.stringify(budget));
+  } catch {
+    // Ignore storage issues
+  }
+}
+
+// -------------------------------------------------------------
 // REVIEW TASK DRAFT
 // -------------------------------------------------------------
 
@@ -235,7 +300,8 @@ export function getSavedTaskText(owner: string, repo: string, branch: string): s
 export function saveTaskText(owner: string, repo: string, branch: string, text: string): void {
   try {
     const key = `commitpack:v1:task:${getRepoBranchKey(owner, repo, branch)}`;
-    if (!text.trim()) {
+    const safeText = (text || '').trim();
+    if (!safeText) {
       localStorage.removeItem(key);
     } else {
       localStorage.setItem(key, text);
@@ -247,3 +313,51 @@ export function saveTaskText(owner: string, repo: string, branch: string, text: 
 
 export const getSavedTaskDraft = getSavedTaskText;
 export const saveTaskDraft = saveTaskText;
+
+// -------------------------------------------------------------
+// REPOSITORY CONTEXT (MAIN TREE & SELECTED FILE PACK)
+// -------------------------------------------------------------
+
+export function getPersistedRepoContext(owner: string, repo: string): PersistedRepoContextState {
+  try {
+    const key = `commitpack:v1:repo-context:${getRepoKey(owner, repo)}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+      return {
+        activeMode: 'commit',
+        selectedPaths: [],
+        approvedFallbackBranch: null,
+      };
+    }
+    const parsed = JSON.parse(raw);
+    const mode = parsed.activeMode === 'main' || parsed.activeMode === 'main-context'
+      ? 'main-context'
+      : 'commit';
+    return {
+      activeMode: mode,
+      approvedFallbackBranch: parsed.approvedFallbackBranch || null,
+      selectedPaths: Array.isArray(parsed.selectedPaths) ? parsed.selectedPaths : [],
+      lastUsedFormat: parsed.lastUsedFormat || 'flat',
+    };
+  } catch {
+    return {
+      activeMode: 'commit',
+      selectedPaths: [],
+      approvedFallbackBranch: null,
+    };
+  }
+}
+
+export function savePersistedRepoContext(
+  owner: string,
+  repo: string,
+  state: PersistedRepoContextState
+): void {
+  try {
+    const key = `commitpack:v1:repo-context:${getRepoKey(owner, repo)}`;
+    localStorage.setItem(key, JSON.stringify(state));
+  } catch {
+    // Ignore storage quota issues
+  }
+}
+
